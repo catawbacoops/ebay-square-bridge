@@ -160,8 +160,8 @@ app.post("/api/ebay/list", auth, async (req, res) => {
   const weightPounds = Math.floor(totalOz / 16);
   const weightOunces = totalOz % 16;
 
-  // Categories where eBay does not allow ConditionID (food, consumables, etc.)
-  const noConditionCategories = ["177762", "14308", "181000", "3025"];
+  // Categories where eBay does not allow ConditionID
+  const noConditionCategories = ["14308", "181000", "3025"];
   const skipCondition = noConditionCategories.includes(String(categoryId));
 
   let itemNode = create({ version: "1.0", encoding: "utf-8" })
