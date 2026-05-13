@@ -143,7 +143,7 @@ app.get("/api/square/products", auth, async (req, res) => {
 
 // ── eBay: list item ──────────────────────────────────────────────────────────
 app.post("/api/ebay/list", auth, async (req, res) => {
-  const { name, description, sku, ebayPrice, quantity, categoryId, conditionId, markup, imageUrl, brand, itemType, weightLbs } = req.body;
+  const { name, description, sku, ebayPrice, quantity, categoryId, conditionId, markup, imageUrl, brand, itemType, weightLbs, shippingCost } = req.body;
 
   if (!name || !ebayPrice) return res.status(400).json({ error: "Missing required fields" });
   if (!brand) return res.status(400).json({ error: "Brand is required by eBay" });
@@ -218,7 +218,6 @@ app.post("/api/ebay/list", auth, async (req, res) => {
           .ele("ShippingServiceOptions")
             .ele("ShippingServicePriority").txt("1").up()
             .ele("ShippingService").txt("UPSGround").up()
-            .ele("ShippingServiceAdditionalCost").txt("0.00").up()
           .up()
           .ele("ShipToLocations").txt("US").up()
           .ele("CalculatedShippingRate")
@@ -245,6 +244,11 @@ app.post("/api/ebay/list", auth, async (req, res) => {
     .up()
     .end({ prettyPrint: false });
 
+  // Log the XML being sent for debugging
+  console.log("=== EBAY XML BEING SENT ===");
+  console.log(xml);
+  console.log("=== END XML ===");
+
   try {
     const ebayRes = await fetch(EBAY_API_URL, {
       method: "POST",
@@ -252,6 +256,9 @@ app.post("/api/ebay/list", auth, async (req, res) => {
       body: xml,
     });
     const xmlText = await ebayRes.text();
+    console.log("=== EBAY RESPONSE ===");
+    console.log(xmlText);
+    console.log("=== END RESPONSE ===");
     const parsed = await parseXml(xmlText);
     const resp = parsed?.AddFixedPriceItemResponse;
 
