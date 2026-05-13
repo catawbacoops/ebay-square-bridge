@@ -227,6 +227,7 @@ app.post("/api/ebay/list", auth, async (req, res) => {
             .ele("PackagingHandlingCosts").txt("0.00").up()
             .ele("ShippingPackage").txt("PackageThickEnvelope").up()
             .ele("OriginatingPostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
+            .ele("WeightUnit").txt("lbs").up()
           .up()
         .up()
         .ele("ReturnPolicy")
