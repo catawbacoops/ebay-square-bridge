@@ -426,7 +426,7 @@
     document.getElementById('m-cat').value = '29223';
     document.getElementById('m-brand').value = '';
     document.getElementById('m-type').value = '';
-    document.getElementById('m-weight').value = product.weight ? product.weight : '';
+    document.getElementById('m-weight').value = (product.weight && product.weight > 0) ? product.weight : '';
     document.getElementById('modal-err').textContent = '';
     document.getElementById('submit-btn').disabled = false;
     document.getElementById('submit-btn').textContent = 'List on eBay';
