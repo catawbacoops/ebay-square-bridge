@@ -501,6 +501,18 @@ app.post("/webhook/ebay-account-deletion", (req, res) => {
   res.status(200).json({ message: "Acknowledged" });
 });
 
+// ── Debug: preview values without sending to eBay ────────────────────────────
+app.post("/api/ebay/preview-xml", auth, async (req, res) => {
+  const { name, ebayPrice, quantity, categoryId, conditionId, markup, imageUrl, brand, itemType, weightLbs } = req.body;
+  const finalPrice = markup !== undefined ? parseFloat((ebayPrice * (1 + parseFloat(markup) / 100)).toFixed(2)) : ebayPrice;
+  const totalOz = Math.round(parseFloat(weightLbs) * 16);
+  const weightPounds = Math.floor(totalOz / 16);
+  const weightOunces = totalOz % 16;
+  const noConditionCategories = ["177762", "14308", "181000", "3025"];
+  const skipCondition = noConditionCategories.includes(String(categoryId));
+  res.json({ debug: { weightLbs, totalOz, weightPounds, weightOunces, skipCondition, categoryId, finalPrice, brand, itemType, hasImage: !!imageUrl } });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
