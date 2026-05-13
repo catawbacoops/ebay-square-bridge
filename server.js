@@ -131,6 +131,7 @@ app.get("/api/square/products", auth, async (req, res) => {
         ebayPrice,
         inStock: variationData.track_inventory === false || true,
         imageUrl: imageId ? (imageUrlMap[imageId] || "") : "",
+        weight: variationData.weight ? variationData.weight.weight : null,
       };
     });
 
@@ -142,16 +143,26 @@ app.get("/api/square/products", auth, async (req, res) => {
 
 // ── eBay: list item ──────────────────────────────────────────────────────────
 app.post("/api/ebay/list", auth, async (req, res) => {
-  const { name, description, sku, ebayPrice, quantity, categoryId, conditionId, markup, imageUrl, brand, itemType } = req.body;
+  const { name, description, sku, ebayPrice, quantity, categoryId, conditionId, markup, imageUrl, brand, itemType, weightLbs } = req.body;
 
   if (!name || !ebayPrice) return res.status(400).json({ error: "Missing required fields" });
   if (!brand) return res.status(400).json({ error: "Brand is required by eBay" });
   if (!itemType) return res.status(400).json({ error: "Type is required by eBay" });
+  if (!weightLbs || isNaN(weightLbs)) return res.status(400).json({ error: "Weight is required by eBay" });
 
   // Apply custom markup if provided
   const finalPrice = markup !== undefined
     ? parseFloat((ebayPrice * (1 + parseFloat(markup) / 100)).toFixed(2))
     : ebayPrice;
+
+  // Split weight into whole pounds and ounces for eBay
+  const totalOz = Math.round(parseFloat(weightLbs) * 16);
+  const weightPounds = Math.floor(totalOz / 16);
+  const weightOunces = totalOz % 16;
+
+  // Categories where eBay does not allow ConditionID (food, consumables, etc.)
+  const noConditionCategories = ["177762", "14308", "181000", "3025"];
+  const skipCondition = noConditionCategories.includes(String(categoryId));
 
   let itemNode = create({ version: "1.0", encoding: "utf-8" })
     .ele("AddFixedPriceItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
@@ -162,10 +173,16 @@ app.post("/api/ebay/list", auth, async (req, res) => {
         .ele("Title").txt(name.substring(0, 80)).up()
         .ele("Description").txt(description || name).up()
         .ele("PrimaryCategory")
-          .ele("CategoryID").txt(String(categoryId || "29223")).up()
+          .ele("CategoryID").txt(String(categoryId || "177762")).up()
         .up()
-        .ele("StartPrice").txt(String(finalPrice)).up()
-        .ele("ConditionID").txt(String(conditionId || "1000")).up()
+        .ele("StartPrice").txt(String(finalPrice)).up();
+
+  // Only add ConditionID for categories that support it
+  if (!skipCondition) {
+    itemNode = itemNode.ele("ConditionID").txt(String(conditionId || "1000")).up();
+  }
+
+  itemNode = itemNode
         .ele("Country").txt("US").up()
         .ele("Currency").txt("USD").up()
         .ele("DispatchTimeMax").txt("3").up()
@@ -201,6 +218,15 @@ app.post("/api/ebay/list", auth, async (req, res) => {
           .ele("ShippingServiceOptions")
             .ele("ShippingServicePriority").txt("1").up()
             .ele("ShippingService").txt("UPSGround").up()
+            .ele("ShippingServiceAdditionalCost").txt("0.00").up()
+          .up()
+          .ele("ShipToLocations").txt("US").up()
+          .ele("CalculatedShippingRate")
+            .ele("WeightMajor", { unit: "lbs" }).txt(String(weightPounds)).up()
+            .ele("WeightMinor", { unit: "oz" }).txt(String(weightOunces)).up()
+            .ele("PackagingHandlingCosts").txt("0.00").up()
+            .ele("ShippingPackage").txt("PackageThickEnvelope").up()
+            .ele("OriginatingPostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
           .up()
         .up()
         .ele("ReturnPolicy")
