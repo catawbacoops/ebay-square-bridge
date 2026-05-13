@@ -211,6 +211,8 @@ app.post("/api/ebay/list", auth, async (req, res) => {
         .up()
         .ele("PaymentMethods").txt("PayPal").up()
         .ele("PayPalEmailAddress").txt(PAYPAL_EMAIL).up()
+        .ele("Location").txt(process.env.SHIP_FROM_CITY || "Myerstown, PA").up()
+        .ele("PostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
         .ele("Site").txt("US").up()
       .up()
     .up()
