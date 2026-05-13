@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>eBay Lister</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f4f2;
+      color: #1a1a1a;
+      min-height: 100vh;
+    }
+
+    /* ── Login ── */
+    #login-screen {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; background: #f4f4f2;
+    }
+    .login-box {
+      background: #fff; border-radius: 12px; padding: 36px 32px;
+      width: 340px; box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+    }
+    .login-box h1 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+    .login-box p { font-size: 13px; color: #888; margin-bottom: 24px; }
+    .login-box input {
+      width: 100%; padding: 10px 12px; border: 1.5px solid #ddd;
+      border-radius: 8px; font-size: 14px; margin-bottom: 12px; outline: none;
+    }
+    .login-box input:focus { border-color: #E53238; }
+    .login-box button {
+      width: 100%; padding: 11px; background: #E53238; color: #fff;
+      border: none; border-radius: 8px; font-size: 15px; font-weight: 500;
+      cursor: pointer;
+    }
+    .login-box button:hover { background: #c42b30; }
+    .login-err { font-size: 13px; color: #c42b30; margin-top: 8px; }
+
+    /* ── App shell ── */
+    #app { display: none; }
+
+    header {
+      background: #fff; border-bottom: 1px solid #e5e5e5;
+      padding: 0 24px; height: 56px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .logo { display: flex; align-items: center; gap: 10px; }
+    .logo-badge {
+      background: #E53238; color: #fff; font-size: 12px; font-weight: 700;
+      padding: 3px 8px; border-radius: 4px; letter-spacing: 0.02em;
+    }
+    header h1 { font-size: 15px; font-weight: 600; }
+    .header-actions { display: flex; gap: 10px; align-items: center; }
+    .sync-btn {
+      font-size: 13px; padding: 6px 14px; border-radius: 6px;
+      border: 1.5px solid #ddd; background: #fff; cursor: pointer; font-weight: 500;
+    }
+    .sync-btn:hover { background: #f5f5f5; }
+    .sync-btn.loading { opacity: 0.6; pointer-events: none; }
+
+    main { max-width: 960px; margin: 0 auto; padding: 28px 24px; }
+
+    /* ── Stats bar ── */
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+    .stat-card {
+      background: #fff; border-radius: 10px; padding: 14px 16px;
+      border: 1px solid #e5e5e5;
+    }
+    .stat-card p:first-child { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .stat-card p:last-child { font-size: 22px; font-weight: 600; color: #1a1a1a; }
+
+    /* ── Search panel ── */
+    .panel { background: #fff; border-radius: 10px; border: 1px solid #e5e5e5; margin-bottom: 20px; overflow: hidden; }
+    .panel-header { padding: 14px 18px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; }
+    .panel-header h2 { font-size: 14px; font-weight: 600; }
+    .panel-body { padding: 16px 18px; }
+
+    .search-row { display: flex; gap: 10px; margin-bottom: 14px; }
+    .search-row input {
+      flex: 1; padding: 9px 12px; border: 1.5px solid #ddd;
+      border-radius: 8px; font-size: 14px; outline: none;
+    }
+    .search-row input:focus { border-color: #E53238; }
+    .markup-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #555; }
+    .markup-row input {
+      width: 64px; padding: 6px 8px; border: 1.5px solid #ddd;
+      border-radius: 6px; font-size: 14px; text-align: center; outline: none;
+    }
+    .markup-row input:focus { border-color: #E53238; }
+
+    /* product results table */
+    .prod-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .prod-table th {
+      text-align: left; font-size: 11px; font-weight: 600; color: #888;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      padding: 8px 10px; border-bottom: 1px solid #f0f0f0;
+    }
+    .prod-table td { padding: 10px 10px; border-bottom: 1px solid #f8f8f8; vertical-align: middle; }
+    .prod-table tr:last-child td { border-bottom: none; }
+    .prod-table tr:hover td { background: #fafafa; }
+    .prod-name { font-weight: 500; color: #111; max-width: 280px; }
+    .prod-sku { color: #aaa; font-size: 12px; }
+    .price-sq { color: #888; }
+    .price-eb { color: #1a6e3c; font-weight: 600; }
+
+    .list-btn {
+      padding: 6px 14px; background: #E53238; color: #fff;
+      border: none; border-radius: 6px; font-size: 12px; font-weight: 500;
+      cursor: pointer; white-space: nowrap;
+    }
+    .list-btn:hover { background: #c42b30; }
+    .list-btn:disabled { background: #f0a0a2; cursor: not-allowed; }
+    .list-btn.listed { background: #1D9E75; }
+
+    .empty-state { text-align: center; padding: 32px; color: #aaa; font-size: 14px; }
+
+    /* ── List modal ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.35); z-index: 200;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #fff; border-radius: 12px; padding: 28px;
+      width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto;
+    }
+    .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 18px; }
+    .form-row { margin-bottom: 14px; }
+    .form-row label { display: block; font-size: 12px; font-weight: 500; color: #555; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .form-row input, .form-row textarea, .form-row select {
+      width: 100%; padding: 9px 12px; border: 1.5px solid #ddd;
+      border-radius: 8px; font-size: 14px; outline: none; font-family: inherit;
+    }
+    .form-row input:focus, .form-row textarea:focus, .form-row select:focus { border-color: #E53238; }
+    .form-row textarea { resize: vertical; min-height: 80px; }
+    .form-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .btn-primary {
+      flex: 1; padding: 11px; background: #E53238; color: #fff;
+      border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
+    }
+    .btn-primary:hover { background: #c42b30; }
+    .btn-primary:disabled { background: #f0a0a2; cursor: not-allowed; }
+    .btn-cancel {
+      padding: 11px 20px; background: #fff; color: #555;
+      border: 1.5px solid #ddd; border-radius: 8px; font-size: 14px; cursor: pointer;
+    }
+    .btn-cancel:hover { background: #f5f5f5; }
+
+    /* ── Recent listings table ── */
+    .listing-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+    .listing-row:last-child { border-bottom: none; }
+    .listing-name { flex: 1; font-weight: 500; }
+    .listing-price { color: #1a6e3c; font-weight: 600; min-width: 60px; }
+    .listing-id { color: #aaa; font-size: 12px; }
+    .listing-link { color: #E53238; font-size: 12px; text-decoration: none; }
+    .listing-link:hover { text-decoration: underline; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: #1a1a1a; color: #fff;
+      padding: 12px 18px; border-radius: 8px; font-size: 13px;
+      transform: translateY(80px); opacity: 0;
+      transition: all 0.25s ease; z-index: 999;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { background: #1D9E75; }
+    .toast.error { background: #c42b30; }
+
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .dot-green { background: #1D9E75; }
+    .dot-red { background: #E53238; }
+  </style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>eBay Lister</h1>
+    <p>Enter your dashboard password to continue</p>
+    <input type="password" id="pwd-input" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()" />
+    <button onclick="doLogin()">Sign In</button>
+    <p class="login-err" id="login-err"></p>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <header>
+    <div class="logo">
+      <span class="logo-badge">eBay</span>
+      <h1>Square → eBay Lister</h1>
+    </div>
+    <div class="header-actions">
+      <button class="sync-btn" onclick="syncOrders()" id="sync-btn">↻ Sync eBay Orders</button>
+      <span style="font-size:13px;color:#888;">
+        <span class="status-dot dot-green" id="sq-dot"></span>Square
+        &nbsp;
+        <span class="status-dot dot-green" id="eb-dot"></span>eBay
+      </span>
+    </div>
+  </header>
+
+  <main>
+    <div class="stats">
+      <div class="stat-card"><p>Listed Today</p><p id="stat-listed">—</p></div>
+      <div class="stat-card"><p>Orders Synced</p><p id="stat-orders">—</p></div>
+      <div class="stat-card"><p>Active Markup</p><p id="stat-markup">10%</p></div>
+    </div>
+
+    <!-- Search & List -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Search Square Catalog &amp; List on eBay</h2>
+        <div class="markup-row">
+          Markup:
+          <input type="number" id="markup-input" value="10" min="0" max="200" step="1" oninput="updateMarkupStat()" />
+          %
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="search-row">
+          <input type="text" id="search-input" placeholder="Search products by name or SKU…" oninput="handleSearch()" autocomplete="off" />
+        </div>
+        <div id="search-results">
+          <div class="empty-state">Type to search your Square catalog</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent listings -->
+    <div class="panel">
+      <div class="panel-header"><h2>Recent Listings</h2></div>
+      <div class="panel-body">
+        <div id="recent-listings"><div class="empty-state">No listings yet this session</div></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- List Modal -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3>List on eBay</h3>
+    <!-- Photo preview -->
+    <div id="m-photo-wrap" style="display:none;margin-bottom:14px;">
+      <img id="m-photo" src="" alt="Product photo" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #eee;" />
+      <span style="font-size:12px;color:#1D9E75;margin-left:10px;">✓ Photo from Square</span>
+    </div>
+
+    <div class="form-row">
+      <label>Title (max 80 chars)</label>
+      <input type="text" id="m-title" maxlength="80" />
+      <div style="font-size:11px;color:#aaa;margin-top:3px;" id="m-title-count">0/80</div>
+    </div>
+    <div class="form-row">
+      <label>Description</label>
+      <textarea id="m-desc"></textarea>
+    </div>
+    <div class="form-two">
+      <div class="form-row">
+        <label>Brand <span style="color:#c42b30;">*</span></label>
+        <input type="text" id="m-brand" placeholder="e.g. Prairie Gold" />
+      </div>
+      <div class="form-row">
+        <label>Type <span style="color:#c42b30;">*</span></label>
+        <input type="text" id="m-type" placeholder="e.g. Hard White Wheat" />
+      </div>
+    </div>
+    <div class="form-two">
+      <div class="form-row">
+        <label>eBay Price ($)</label>
+        <input type="number" id="m-price" step="0.01" min="0.99" />
+      </div>
+      <div class="form-row">
+        <label>Quantity</label>
+        <input type="number" id="m-qty" value="1" min="1" />
+      </div>
+    </div>
+    <div class="form-two">
+      <div class="form-row">
+        <label>eBay Category ID</label>
+        <input type="text" id="m-cat" placeholder="e.g. 29223" value="29223" />
+      </div>
+      <div class="form-row">
+        <label>Condition</label>
+        <select id="m-cond">
+          <option value="1000">New</option>
+          <option value="1500">New other</option>
+          <option value="2000">Manufacturer refurbished</option>
+          <option value="2500">Seller refurbished</option>
+          <option value="3000">Used</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>SKU</label>
+      <input type="text" id="m-sku" />
+    </div>
+    <div style="font-size:12px;color:#888;margin-top:4px;">
+      Need the right category ID? Find it at
+      <a href="https://www.ebay.com/sch/allcategories/all-categories" target="_blank" style="color:#E53238;">ebay.com/sch/allcategories</a>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" id="submit-btn" onclick="submitListing()">List on eBay</button>
+    </div>
+    <div id="modal-err" style="font-size:13px;color:#c42b30;margin-top:10px;"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let PASSWORD = '';
+  let searchTimeout = null;
+  let currentProduct = null;
+  let listedCount = 0;
+  let ordersCount = 0;
+  const recentListings = [];
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  function doLogin() {
+    const pwd = document.getElementById('pwd-input').value.trim();
+    if (!pwd) return;
+    PASSWORD = pwd;
+    // Test with a real API call
+    fetch('/api/square/products?q=test', { headers: { 'x-dashboard-password': pwd } })
+      .then(r => {
+        if (r.status === 401) {
+          document.getElementById('login-err').textContent = 'Incorrect password.';
+          PASSWORD = '';
+        } else {
+          document.getElementById('login-screen').style.display = 'none';
+          document.getElementById('app').style.display = 'block';
+        }
+      })
+      .catch(() => {
+        document.getElementById('login-err').textContent = 'Could not connect to server.';
+      });
+  }
+
+  // ── Search ────────────────────────────────────────────────────────────────
+  function handleSearch() {
+    clearTimeout(searchTimeout);
+    const q = document.getElementById('search-input').value.trim();
+    if (q.length < 2) {
+      document.getElementById('search-results').innerHTML = '<div class="empty-state">Type to search your Square catalog</div>';
+      return;
+    }
+    searchTimeout = setTimeout(() => searchProducts(q), 300);
+  }
+
+  async function searchProducts(q) {
+    document.getElementById('search-results').innerHTML = '<div class="empty-state">Searching…</div>';
+    try {
+      const markup = parseFloat(document.getElementById('markup-input').value) || 10;
+      const res = await fetch('/api/square/products?q=' + encodeURIComponent(q), {
+        headers: { 'x-dashboard-password': PASSWORD }
+      });
+      const items = await res.json();
+      if (items.error) { renderError(items.error); return; }
+      if (!items.length) { document.getElementById('search-results').innerHTML = '<div class="empty-state">No products found</div>'; return; }
+
+      // Apply current markup
+      const adjusted = items.map(p => ({
+        ...p,
+        ebayPrice: parseFloat((p.squarePrice * (1 + markup / 100)).toFixed(2))
+      }));
+
+      renderProducts(adjusted);
+    } catch(e) {
+      document.getElementById('search-results').innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + e.message + '</div>';
+    }
+  }
+
+  function renderProducts(items) {
+    const html = `
+      <table class="prod-table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Square Price</th>
+            <th>eBay Price</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(p => `
+            <tr>
+              <td>
+                <div class="prod-name">${esc(p.name)}</div>
+                ${p.sku ? `<div class="prod-sku">SKU: ${esc(p.sku)}</div>` : ''}
+              </td>
+              <td class="price-sq">${p.squarePrice > 0 ? '$' + p.squarePrice.toFixed(2) : '—'}</td>
+              <td class="price-eb">${p.ebayPrice > 0 ? '$' + p.ebayPrice.toFixed(2) : '—'}</td>
+              <td>
+                <button class="list-btn" onclick="openModal(${JSON.stringify(p).replace(/"/g, '&quot;')})">List on eBay</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+    document.getElementById('search-results').innerHTML = html;
+  }
+
+  // ── Modal ─────────────────────────────────────────────────────────────────
+  function openModal(product) {
+    currentProduct = product;
+    document.getElementById('m-title').value = product.name.substring(0, 80);
+    document.getElementById('m-desc').value = product.description || product.name;
+    document.getElementById('m-price').value = product.ebayPrice > 0 ? product.ebayPrice.toFixed(2) : '';
+    document.getElementById('m-qty').value = '1';
+    document.getElementById('m-sku').value = product.sku || '';
+    document.getElementById('m-cat').value = '29223';
+    document.getElementById('m-brand').value = '';
+    document.getElementById('m-type').value = '';
+    document.getElementById('modal-err').textContent = '';
+    document.getElementById('submit-btn').disabled = false;
+    document.getElementById('submit-btn').textContent = 'List on eBay';
+    updateTitleCount();
+
+    // Show photo if available from Square
+    const photoWrap = document.getElementById('m-photo-wrap');
+    const photoImg = document.getElementById('m-photo');
+    if (product.imageUrl) {
+      photoImg.src = product.imageUrl;
+      photoWrap.style.display = 'flex';
+      photoWrap.style.alignItems = 'center';
+    } else {
+      photoWrap.style.display = 'none';
+      photoImg.src = '';
+    }
+
+    document.getElementById('modal').classList.add('open');
+  }
+
+  function closeModal() {
+    document.getElementById('modal').classList.remove('open');
+    currentProduct = null;
+  }
+
+  document.getElementById('m-title').addEventListener('input', updateTitleCount);
+  function updateTitleCount() {
+    const len = document.getElementById('m-title').value.length;
+    document.getElementById('m-title-count').textContent = len + '/80';
+  }
+
+  async function submitListing() {
+    const btn = document.getElementById('submit-btn');
+    const errEl = document.getElementById('modal-err');
+    errEl.textContent = '';
+
+    const title = document.getElementById('m-title').value.trim();
+    const price = parseFloat(document.getElementById('m-price').value);
+    const qty = parseInt(document.getElementById('m-qty').value);
+    const cat = document.getElementById('m-cat').value.trim();
+    const cond = document.getElementById('m-cond').value;
+    const desc = document.getElementById('m-desc').value.trim();
+    const sku = document.getElementById('m-sku').value.trim();
+    const brand = document.getElementById('m-brand').value.trim();
+    const itemType = document.getElementById('m-type').value.trim();
+    const imageUrl = currentProduct?.imageUrl || '';
+
+    if (!title) { errEl.textContent = 'Title is required.'; return; }
+    if (!price || price < 0.99) { errEl.textContent = 'Price must be at least $0.99.'; return; }
+    if (!cat) { errEl.textContent = 'Category ID is required.'; return; }
+    if (!brand) { errEl.textContent = 'Brand is required by eBay.'; return; }
+    if (!itemType) { errEl.textContent = 'Type is required by eBay.'; return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Listing…';
+
+    try {
+      const res = await fetch('/api/ebay/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+        body: JSON.stringify({
+          name: title, description: desc, sku,
+          ebayPrice: price, quantity: qty,
+          categoryId: cat, conditionId: cond,
+          brand, itemType, imageUrl
+        })
+      });
+      const data = await res.json();
+      if (data.error) {
+        errEl.textContent = data.error;
+        btn.disabled = false;
+        btn.textContent = 'List on eBay';
+        return;
+      }
+
+      closeModal();
+      listedCount++;
+      document.getElementById('stat-listed').textContent = listedCount;
+      recentListings.unshift({ name: title, price, itemId: data.itemId });
+      renderRecentListings();
+      showToast('Listed! eBay Item ID: ' + data.itemId, 'success');
+    } catch(e) {
+      errEl.textContent = 'Error: ' + e.message;
+      btn.disabled = false;
+      btn.textContent = 'List on eBay';
+    }
+  }
+
+  // ── Recent listings ───────────────────────────────────────────────────────
+  function renderRecentListings() {
+    if (!recentListings.length) return;
+    document.getElementById('recent-listings').innerHTML = recentListings.slice(0, 10).map(l => `
+      <div class="listing-row">
+        <span class="listing-name">${esc(l.name)}</span>
+        <span class="listing-price">$${l.price.toFixed(2)}</span>
+        <span class="listing-id">${l.itemId}</span>
+        <a class="listing-link" href="https://www.ebay.com/itm/${l.itemId}" target="_blank">View →</a>
+      </div>
+    `).join('');
+  }
+
+  // ── Sync orders ───────────────────────────────────────────────────────────
+  async function syncOrders() {
+    const btn = document.getElementById('sync-btn');
+    btn.classList.add('loading');
+    btn.textContent = 'Syncing…';
+    try {
+      const res = await fetch('/api/sync-orders', {
+        method: 'POST',
+        headers: { 'x-dashboard-password': PASSWORD }
+      });
+      const data = await res.json();
+      if (data.error) { showToast(data.error, 'error'); }
+      else { ordersCount++; document.getElementById('stat-orders').textContent = ordersCount; showToast('Orders synced to Square', 'success'); }
+    } catch(e) {
+      showToast('Sync failed: ' + e.message, 'error');
+    }
+    btn.classList.remove('loading');
+    btn.textContent = '↻ Sync eBay Orders';
+  }
+
+  // ── Utilities ─────────────────────────────────────────────────────────────
+  function updateMarkupStat() {
+    const v = document.getElementById('markup-input').value;
+    document.getElementById('stat-markup').textContent = v + '%';
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  let toastTimer;
+  function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show ' + (type || '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.className = 'toast'; }, 3500);
+  }
+
+  // Close modal on overlay click
+  document.getElementById('modal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+</script>
+</body>
+</html>
