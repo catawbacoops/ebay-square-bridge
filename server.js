@@ -636,6 +636,94 @@ app.get("/api/ebay/listings", auth, async (req, res) => {
   }
 });
 
+// ── eBay: check if SKUs are listed ───────────────────────────────────────────
+// POST { skus: ["155009", "155010", ...] }
+// Returns { "155009": "123456789012", "155010": null, ... }
+app.post("/api/ebay/check-listed", auth, async (req, res) => {
+  const { skus } = req.body;
+  if (!skus || !skus.length) return res.json({});
+
+  // Fetch all active listings (up to 200)
+  const skuSet = new Set(skus.map(String));
+  const result = {};
+  skus.forEach(s => { result[String(s)] = null; });
+
+  try {
+    for (let page = 1; page <= 4; page++) {
+      const xml = create({ version: "1.0", encoding: "utf-8" })
+        .ele("GetMyeBaySellingRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+          .ele("RequesterCredentials")
+            .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+          .up()
+          .ele("ActiveList")
+            .ele("Include").txt("true").up()
+            .ele("Pagination")
+              .ele("EntriesPerPage").txt("50").up()
+              .ele("PageNumber").txt(String(page)).up()
+            .up()
+          .up()
+          .ele("DetailLevel").txt("ReturnAll").up()
+        .up()
+        .end({ prettyPrint: false });
+
+      const ebayRes = await fetch(EBAY_API_URL, {
+        method: "POST",
+        headers: ebayHeaders("GetMyeBaySelling"),
+        body: xml,
+      });
+      const parsed = await parseXml(await ebayRes.text());
+      const resp = parsed?.GetMyeBaySellingResponse;
+      const items = [].concat(resp?.ActiveList?.ItemArray?.Item || []);
+
+      items.forEach(item => {
+        const sku = String(item.SKU || "");
+        if (skuSet.has(sku)) result[sku] = item.ItemID;
+      });
+
+      const totalPages = parseInt(resp?.ActiveList?.PaginationResult?.TotalNumberOfPages || "1");
+      if (page >= totalPages) break;
+    }
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── eBay: end (remove) a listing ─────────────────────────────────────────────
+app.post("/api/ebay/end-listing", auth, async (req, res) => {
+  const { itemId } = req.body;
+  if (!itemId) return res.status(400).json({ error: "itemId required" });
+
+  const xml = create({ version: "1.0", encoding: "utf-8" })
+    .ele("EndFixedPriceItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+      .ele("RequesterCredentials")
+        .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+      .up()
+      .ele("ItemID").txt(String(itemId)).up()
+      .ele("EndingReason").txt("NotAvailable").up()
+    .up()
+    .end({ prettyPrint: false });
+
+  try {
+    const ebayRes = await fetch(EBAY_API_URL, {
+      method: "POST",
+      headers: ebayHeaders("EndFixedPriceItem"),
+      body: xml,
+    });
+    const parsed = await parseXml(await ebayRes.text());
+    const resp = parsed?.EndFixedPriceItemResponse;
+
+    if (resp?.Ack === "Failure") {
+      const errors = [].concat(resp?.Errors || []);
+      return res.status(400).json({ error: errors.map(e => e.LongMessage || e.ShortMessage).join("; ") });
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
