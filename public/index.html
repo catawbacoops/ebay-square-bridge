@@ -132,6 +132,24 @@
     .row-mismatch:hover { background: #fff5d6 !important; }
     .price-mismatch { color: #856404; font-weight: 600; font-size: 12px; }
     .action-cell { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .sort-row { display: flex; align-items: center; gap: 6px; padding: 8px 0 12px; flex-wrap: wrap; }
+    .sort-label { font-size: 12px; color: #888; font-weight: 500; margin-right: 2px; }
+    .sort-btn {
+      padding: 4px 12px; background: #f5f5f5; color: #555;
+      border: 1.5px solid #ddd; border-radius: 20px; font-size: 12px; font-weight: 500;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .sort-btn:hover { background: #eee; border-color: #bbb; }
+    .sort-btn.active { background: #E53238; color: #fff; border-color: #E53238; }
+    .sort-dir-btn {
+      padding: 4px 10px; background: #f5f5f5; color: #555;
+      border: 1.5px solid #ddd; border-radius: 20px; font-size: 13px; font-weight: 700;
+      cursor: pointer; margin-left: 4px;
+    }
+    .sort-dir-btn:hover { background: #eee; }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: #E53238; }
+    th.sort-active { color: #E53238; }
 
     .empty-state { text-align: center; padding: 32px; color: #aaa; font-size: 14px; }
 
@@ -254,6 +272,13 @@
       <div class="panel-body">
         <div class="search-row">
           <input type="text" id="search-input" placeholder="Search products by name or SKU…" oninput="handleSearch()" autocomplete="off" />
+        </div>
+        <div class="sort-row" id="sort-controls" style="display:none;">
+          <span class="sort-label">Sort by:</span>
+          <button class="sort-btn active" data-sort="name" onclick="setSort('name')">Product</button>
+          <button class="sort-btn" data-sort="sku" onclick="setSort('sku')">SKU</button>
+          <button class="sort-btn" data-sort="category" onclick="setSort('category')">Category</button>
+          <button class="sort-dir-btn" id="sort-dir-btn" onclick="toggleSortDir()" title="Toggle sort direction">↑</button>
         </div>
         <div id="search-results">
           <div class="empty-state">Type to search your Square catalog</div>
@@ -411,12 +436,46 @@
     const q = document.getElementById('search-input').value.trim();
     if (q.length < 2) {
       document.getElementById('search-results').innerHTML = '<div class="empty-state">Type to search your Square catalog</div>';
+      document.getElementById('sort-controls').style.display = 'none';
+      lastSearchItems = [];
       return;
     }
     searchTimeout = setTimeout(() => searchProducts(q), 300);
   }
 
   let lastSearchItems = [];
+  let currentSort = 'name';
+  let sortAsc = true;
+
+  function setSort(field) {
+    if (currentSort === field) {
+      sortAsc = !sortAsc;
+    } else {
+      currentSort = field;
+      sortAsc = true;
+    }
+    document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === field));
+    document.getElementById('sort-dir-btn').textContent = sortAsc ? '\u2191' : '\u2193';
+    if (lastSearchItems.length) renderProducts(lastSearchItems, window._lastSkuMap || {});
+  }
+
+  function toggleSortDir() {
+    sortAsc = !sortAsc;
+    document.getElementById('sort-dir-btn').textContent = sortAsc ? '\u2191' : '\u2193';
+    if (lastSearchItems.length) renderProducts(lastSearchItems, window._lastSkuMap || {});
+  }
+
+  function sortedItems(items) {
+    const sorted = items.slice().sort(function(a, b) {
+      let av = '', bv = '';
+      if (currentSort === 'name') { av = a.name || ''; bv = b.name || ''; }
+      else if (currentSort === 'sku') { av = a.sku || ''; bv = b.sku || ''; }
+      else if (currentSort === 'category') { av = a.category || ''; bv = b.category || ''; }
+      const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
+      return sortAsc ? cmp : -cmp;
+    });
+    return sorted;
+  }
 
   async function searchProducts(q) {
     document.getElementById('search-results').innerHTML = '<div class="empty-state">Searching…</div>';
@@ -435,6 +494,8 @@
       }));
 
       lastSearchItems = adjusted;
+      window._lastSkuMap = {};
+      document.getElementById('sort-controls').style.display = 'flex';
       renderProducts(adjusted, {});
 
       // Check which SKUs are already listed on eBay
@@ -446,7 +507,7 @@
           body: JSON.stringify({ skus })
         })
         .then(r => r.json())
-        .then(skuMap => renderProducts(lastSearchItems, skuMap))
+        .then(skuMap => { window._lastSkuMap = skuMap; renderProducts(lastSearchItems, skuMap); })
         .catch(() => {});
       }
     } catch(e) {
@@ -456,6 +517,7 @@
 
   function renderProducts(items, skuMap) {
     skuMap = skuMap || {};
+    items = sortedItems(items);
     let rows = '';
     items.forEach(function(p) {
       const info = p.sku ? (skuMap[p.sku] || null) : null;
@@ -485,14 +547,21 @@
       }
 
       rows += '<tr' + (hasMismatch ? ' class="row-mismatch"' : '') + '>' +
-        '<td><div class="prod-name">' + esc(p.name) + '</div>' + (p.sku ? '<div class="prod-sku">SKU: ' + esc(p.sku) + '</div>' : '') + '</td>' +
+        '<td><div class="prod-name">' + esc(p.name) + '</div></td>' +
+        '<td><div class="prod-sku">' + (p.sku ? esc(p.sku) : '—') + '</div></td>' +
+        '<td><div class="prod-sku">' + (p.category ? esc(p.category) : '—') + '</div></td>' +
         '<td class="price-sq">' + (p.squarePrice > 0 ? '$' + p.squarePrice.toFixed(2) : '—') + '</td>' +
         priceCell +
         '<td class="action-cell">' + listBtn + syncBtn + removeBtn + '</td>' +
         '</tr>';
     });
     document.getElementById('search-results').innerHTML =
-      '<table class="prod-table"><thead><tr><th>Product</th><th>Square Price</th><th>eBay Price</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+      '<table class="prod-table"><thead><tr>' +
+      '<th class="sortable' + (currentSort==='name'?' sort-active':'') + '" onclick="setSort(\'name\')">Product ' + (currentSort==='name'?(sortAsc?'↑':'↓'):'') + '</th>' +
+      '<th class="sortable' + (currentSort==='sku'?' sort-active':'') + '" onclick="setSort(\'sku\')">SKU ' + (currentSort==='sku'?(sortAsc?'↑':'↓'):'') + '</th>' +
+      '<th class="sortable' + (currentSort==='category'?' sort-active':'') + '" onclick="setSort(\'category\')">Category ' + (currentSort==='category'?(sortAsc?'↑':'↓'):'') + '</th>' +
+      '<th>Square Price</th><th>eBay Price</th><th></th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   function refreshSkuStatus() {
