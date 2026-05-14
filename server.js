@@ -1,8 +1,18 @@
 const express = require("express");
 const fetch = require("node-fetch");
 const path = require("path");
+const fs = require("fs");
 const xml2js = require("xml2js");
 const { create } = require("xmlbuilder2");
+
+// Load weight lookup table (SKU -> weight in lbs)
+let WEIGHT_LOOKUP = {};
+try {
+  WEIGHT_LOOKUP = JSON.parse(fs.readFileSync(path.join(__dirname, "weight_lookup.json"), "utf8"));
+  console.log(`Loaded ${Object.keys(WEIGHT_LOOKUP).length} SKU weights`);
+} catch(e) {
+  console.warn("weight_lookup.json not found");
+}
 
 const app = express();
 app.use(express.json());
@@ -132,13 +142,18 @@ app.get("/api/square/products", auth, async (req, res) => {
         inStock: variationData.track_inventory === false || true,
         imageUrl: imageId ? (imageUrlMap[imageId] || "") : "",
         weightRaw: JSON.stringify(variationData.weight || null),
-        weight: variationData.weight
-          ? (variationData.weight.value
-              ? (variationData.weight.unit === "KILOGRAM"
-                  ? parseFloat((variationData.weight.value * 2.20462).toFixed(3))
-                  : parseFloat(variationData.weight.value))
-              : null)
-          : null,
+        weight: (function() {
+          // 1. Try SKU lookup table first
+          const sku = variationData.sku ? String(variationData.sku).trim() : null;
+          if (sku && WEIGHT_LOOKUP[sku]) return WEIGHT_LOOKUP[sku];
+          // 2. Try Square's native weight field
+          if (variationData.weight && variationData.weight.value) {
+            return variationData.weight.unit === "KILOGRAM"
+              ? parseFloat((variationData.weight.value * 2.20462).toFixed(3))
+              : parseFloat(variationData.weight.value);
+          }
+          return null;
+        })(),
       };
     });
 
