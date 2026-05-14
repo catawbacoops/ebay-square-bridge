@@ -122,6 +122,29 @@ app.get("/api/square/products", auth, async (req, res) => {
       } catch(e) { /* images optional */ }
     }
 
+    // Collect category IDs to batch-fetch names
+    const categoryIds = [];
+    (searchData.objects || []).forEach((obj) => {
+      const catId = obj.item_data?.category_id;
+      if (catId && !categoryIds.includes(catId)) categoryIds.push(catId);
+    });
+
+    // Batch fetch category names from Square
+    let categoryNameMap = {};
+    if (categoryIds.length) {
+      try {
+        const catRes = await fetch(`${SQUARE_BASE}/v2/catalog/batch-retrieve`, {
+          method: "POST",
+          headers: squareHeaders(),
+          body: JSON.stringify({ object_ids: categoryIds }),
+        });
+        const catData = await catRes.json();
+        (catData.objects || []).forEach((cat) => {
+          if (cat.category_data?.name) categoryNameMap[cat.id] = cat.category_data.name;
+        });
+      } catch(e) { /* categories optional */ }
+    }
+
     const items = (searchData.objects || []).map((obj) => {
       const itemData = obj.item_data || {};
       const variation = (itemData.variations || [])[0];
@@ -130,6 +153,8 @@ app.get("/api/square/products", auth, async (req, res) => {
       const priceDollars = priceAmount / 100;
       const ebayPrice = parseFloat((priceDollars * (1 + MARKUP)).toFixed(2));
       const imageId = itemImageMap[obj.id];
+      const categoryId = itemData.category_id || "";
+      const categoryName = categoryNameMap[categoryId] || "";
 
       return {
         catalogId: obj.id,
@@ -137,6 +162,7 @@ app.get("/api/square/products", auth, async (req, res) => {
         name: itemData.name || "Unnamed",
         description: itemData.description || "",
         sku: variationData.sku || "",
+        category: categoryName,
         squarePrice: priceDollars,
         ebayPrice,
         inStock: variationData.track_inventory === false || true,
