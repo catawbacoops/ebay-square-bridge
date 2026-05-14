@@ -174,6 +174,15 @@
     .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
     .dot-green { background: #1D9E75; }
     .dot-red { background: #E53238; }
+    .listings-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .listings-table th { text-align: left; font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+    .listings-table td { padding: 9px 8px; border-bottom: 1px solid #f8f8f8; vertical-align: middle; }
+    .listings-table tr:last-child td { border-bottom: none; }
+    .listings-table tr:hover td { background: #fafafa; }
+    .duplicate-badge { font-size: 11px; background: #f59e0b; color: #fff; padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: 500; }
+    .page-btn { padding: 5px 12px; border: 1.5px solid #ddd; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .page-btn.active { background: #E53238; color: #fff; border-color: #E53238; }
+    .page-btn:hover:not(.active) { background: #f5f5f5; }
   </style>
 </head>
 <body>
@@ -233,11 +242,19 @@
       </div>
     </div>
 
-    <!-- Recent listings -->
+    <!-- Active eBay listings -->
     <div class="panel">
-      <div class="panel-header"><h2>Recent Listings</h2></div>
+      <div class="panel-header">
+        <h2>Active eBay Listings</h2>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="listing-count" style="font-size:13px;color:#888;"></span>
+          <button class="sync-btn" onclick="loadEbayListings()" id="refresh-listings-btn">↻ Refresh</button>
+        </div>
+      </div>
       <div class="panel-body">
-        <div id="recent-listings"><div class="empty-state">No listings yet this session</div></div>
+        <input type="text" id="listing-search" placeholder="Filter listings…" oninput="filterListings()" style="width:100%;margin-bottom:12px;font-size:13px;padding:7px 10px;border:1.5px solid #ddd;border-radius:7px;outline:none;" />
+        <div id="ebay-listings"><div class="empty-state">Loading your eBay listings…</div></div>
+        <div id="listing-pages" style="display:flex;gap:8px;margin-top:12px;justify-content:center;"></div>
       </div>
     </div>
   </main>
@@ -343,7 +360,9 @@
   let currentProduct = null;
   let listedCount = 0;
   let ordersCount = 0;
-  const recentListings = [];
+  let allEbayListings = [];
+  let listedSkus = new Set();
+  let currentListingPage = 1;
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   function doLogin() {
@@ -359,6 +378,7 @@
         } else {
           document.getElementById('login-screen').style.display = 'none';
           document.getElementById('app').style.display = 'block';
+          loadEbayListings();
         }
       })
       .catch(() => {
@@ -445,6 +465,13 @@
     document.getElementById('modal-err').textContent = '';
     document.getElementById('submit-btn').disabled = true;
     document.getElementById('submit-btn').textContent = 'List on eBay';
+
+    // Warn if SKU already listed on eBay
+    const sku = product.sku ? String(product.sku).trim() : '';
+    if (sku && listedSkus.has(sku)) {
+      document.getElementById('modal-err').textContent = '⚠️ This SKU (' + sku + ') is already listed on eBay. Listing again will create a duplicate.';
+      document.getElementById('modal-err').style.color = '#f59e0b';
+    }
     updateTitleCount();
 
     // Show photo if available from Square
@@ -560,11 +587,8 @@
       }
 
       closeModal();
-      listedCount++;
-      document.getElementById('stat-listed').textContent = listedCount;
-      recentListings.unshift({ name: title, price, itemId: data.itemId });
-      renderRecentListings();
       showToast('Listed! eBay Item ID: ' + data.itemId, 'success');
+      loadEbayListings();
     } catch(e) {
       errEl.textContent = 'Error: ' + e.message;
       btn.disabled = false;
@@ -572,17 +596,73 @@
     }
   }
 
-  // ── Recent listings ───────────────────────────────────────────────────────
-  function renderRecentListings() {
-    if (!recentListings.length) return;
-    document.getElementById('recent-listings').innerHTML = recentListings.slice(0, 10).map(l => `
-      <div class="listing-row">
-        <span class="listing-name">${esc(l.name)}</span>
-        <span class="listing-price">$${l.price.toFixed(2)}</span>
-        <span class="listing-id">${l.itemId}</span>
-        <a class="listing-link" href="https://www.ebay.com/itm/${l.itemId}" target="_blank">View →</a>
-      </div>
-    `).join('');
+  // ── eBay Listings ─────────────────────────────────────────────────────────
+  async function loadEbayListings(page) {
+    page = page || currentListingPage;
+    currentListingPage = page;
+    const el = document.getElementById('ebay-listings');
+    const btn = document.getElementById('refresh-listings-btn');
+    el.innerHTML = '<div class="empty-state">Loading…</div>';
+    btn.textContent = 'Loading…';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch('/api/ebay/listings?page=' + page, {
+        headers: { 'x-dashboard-password': PASSWORD }
+      });
+      const data = await res.json();
+      if (data.error) { el.innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + esc(data.error) + '</div>'; return; }
+
+      allEbayListings = data.listings || [];
+      listedSkus = new Set(allEbayListings.map(l => l.sku).filter(Boolean));
+      document.getElementById('listing-count').textContent = data.totalItems + ' active listing' + (data.totalItems !== 1 ? 's' : '');
+      document.getElementById('stat-listed').textContent = data.totalItems;
+
+      renderListings(allEbayListings);
+      renderPages(data.totalPages, page);
+    } catch(e) {
+      el.innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + e.message + '</div>';
+    }
+    btn.textContent = '↻ Refresh';
+    btn.disabled = false;
+  }
+
+  function filterListings() {
+    const q = document.getElementById('listing-search').value.toLowerCase();
+    const filtered = q ? allEbayListings.filter(l => l.title.toLowerCase().includes(q) || l.sku.includes(q)) : allEbayListings;
+    renderListings(filtered);
+  }
+
+  function renderListings(listings) {
+    const el = document.getElementById('ebay-listings');
+    if (!listings.length) { el.innerHTML = '<div class="empty-state">No listings found</div>'; return; }
+
+    // Find duplicate SKUs
+    const skuCount = {};
+    listings.forEach(l => { if (l.sku) skuCount[l.sku] = (skuCount[l.sku] || 0) + 1; });
+
+    el.innerHTML = '<table class="listings-table"><thead><tr><th>Title</th><th>SKU</th><th>Price</th><th>Qty</th><th></th></tr></thead><tbody>' +
+      listings.map(l => {
+        const isDupe = l.sku && skuCount[l.sku] > 1;
+        return '<tr' + (isDupe ? ' style="background:#fff8e6;"' : '') + '>' +
+          '<td>' + esc(l.title.substring(0, 50)) + (isDupe ? '<span class="duplicate-badge">DUPLICATE</span>' : '') + '</td>' +
+          '<td style="color:#aaa;font-size:12px;">' + esc(l.sku || '—') + '</td>' +
+          '<td style="color:#1a6e3c;font-weight:600;">$' + l.price.toFixed(2) + '</td>' +
+          '<td>' + l.quantity + '</td>' +
+          '<td><a href="' + l.url + '" target="_blank" style="color:#E53238;font-size:12px;text-decoration:none;">View →</a></td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody></table>';
+  }
+
+  function renderPages(totalPages, current) {
+    const el = document.getElementById('listing-pages');
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    let html = '';
+    for (let i = 1; i <= totalPages; i++) {
+      html += '<button class="page-btn' + (i === current ? ' active' : '') + '" onclick="loadEbayListings(' + i + ')">' + i + '</button>';
+    }
+    el.innerHTML = html;
   }
 
   // ── Sync orders ───────────────────────────────────────────────────────────
