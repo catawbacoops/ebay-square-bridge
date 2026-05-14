@@ -277,7 +277,6 @@
           <span class="sort-label">Sort by:</span>
           <button class="sort-btn active" data-sort="name" onclick="setSort('name')">Product</button>
           <button class="sort-btn" data-sort="sku" onclick="setSort('sku')">SKU</button>
-          <button class="sort-btn" data-sort="category" onclick="setSort('category')">Category</button>
           <button class="sort-dir-btn" id="sort-dir-btn" onclick="toggleSortDir()" title="Toggle sort direction">↑</button>
         </div>
         <div id="search-results">
@@ -549,7 +548,6 @@
       rows += '<tr' + (hasMismatch ? ' class="row-mismatch"' : '') + '>' +
         '<td><div class="prod-name">' + esc(p.name) + '</div></td>' +
         '<td><div class="prod-sku">' + (p.sku ? esc(p.sku) : '—') + '</div></td>' +
-        '<td><div class="prod-sku">' + (p.category ? esc(p.category) : '—') + '</div></td>' +
         '<td class="price-sq">' + (p.squarePrice > 0 ? '$' + p.squarePrice.toFixed(2) : '—') + '</td>' +
         priceCell +
         '<td class="action-cell">' + listBtn + syncBtn + removeBtn + '</td>' +
@@ -559,7 +557,6 @@
       '<table class="prod-table"><thead><tr>' +
       '<th class="sortable' + (currentSort==='name'?' sort-active':'') + '" onclick="setSort(\'name\')">Product ' + (currentSort==='name'?(sortAsc?'↑':'↓'):'') + '</th>' +
       '<th class="sortable' + (currentSort==='sku'?' sort-active':'') + '" onclick="setSort(\'sku\')">SKU ' + (currentSort==='sku'?(sortAsc?'↑':'↓'):'') + '</th>' +
-      '<th class="sortable' + (currentSort==='category'?' sort-active':'') + '" onclick="setSort(\'category\')">Category ' + (currentSort==='category'?(sortAsc?'↑':'↓'):'') + '</th>' +
       '<th>Square Price</th><th>eBay Price</th><th></th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
