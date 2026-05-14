@@ -106,13 +106,21 @@
     .price-eb { color: #1a6e3c; font-weight: 600; }
 
     .list-btn {
-      padding: 6px 14px; background: #E53238; color: #fff;
+      padding: 6px 14px; color: #fff;
       border: none; border-radius: 6px; font-size: 12px; font-weight: 500;
       cursor: pointer; white-space: nowrap;
     }
-    .list-btn:hover { background: #c42b30; }
-    .list-btn:disabled { background: #f0a0a2; cursor: not-allowed; }
-    .list-btn.listed { background: #1D9E75; }
+    .list-btn.unlisted { background: #1D9E75; }
+    .list-btn.unlisted:hover { background: #178a63; }
+    .list-btn.listed { background: #E53238; }
+    .list-btn.listed:hover { background: #c42b30; }
+    .list-btn:disabled { background: #ccc; cursor: not-allowed; }
+    .remove-btn {
+      padding: 6px 12px; background: #fff; color: #E53238;
+      border: 1.5px solid #E53238; border-radius: 6px; font-size: 12px; font-weight: 500;
+      cursor: pointer; white-space: nowrap;
+    }
+    .remove-btn:hover { background: #fff0f0; }
 
     .empty-state { text-align: center; padding: 32px; color: #aaa; font-size: 14px; }
 
@@ -397,6 +405,8 @@
     searchTimeout = setTimeout(() => searchProducts(q), 300);
   }
 
+  let lastSearchItems = [];
+
   async function searchProducts(q) {
     document.getElementById('search-results').innerHTML = '<div class="empty-state">Searching…</div>';
     try {
@@ -408,46 +418,74 @@
       if (items.error) { renderError(items.error); return; }
       if (!items.length) { document.getElementById('search-results').innerHTML = '<div class="empty-state">No products found</div>'; return; }
 
-      // Apply current markup
       const adjusted = items.map(p => ({
         ...p,
         ebayPrice: parseFloat((p.squarePrice * (1 + markup / 100)).toFixed(2))
       }));
 
-      renderProducts(adjusted);
+      lastSearchItems = adjusted;
+      renderProducts(adjusted, {});
+
+      // Check which SKUs are already listed on eBay
+      const skus = adjusted.map(p => p.sku).filter(Boolean);
+      if (skus.length) {
+        fetch('/api/ebay/check-listed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+          body: JSON.stringify({ skus })
+        })
+        .then(r => r.json())
+        .then(skuMap => renderProducts(lastSearchItems, skuMap))
+        .catch(() => {});
+      }
     } catch(e) {
       document.getElementById('search-results').innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + e.message + '</div>';
     }
   }
 
-  function renderProducts(items) {
-    const html = `
-      <table class="prod-table">
-        <thead>
-          <tr>
-            <th>Product</th>
-            <th>Square Price</th>
-            <th>eBay Price</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${items.map(p => `
-            <tr>
-              <td>
-                <div class="prod-name">${esc(p.name)}</div>
-                ${p.sku ? `<div class="prod-sku">SKU: ${esc(p.sku)}</div>` : ''}
-              </td>
-              <td class="price-sq">${p.squarePrice > 0 ? '$' + p.squarePrice.toFixed(2) : '—'}</td>
-              <td class="price-eb">${p.ebayPrice > 0 ? '$' + p.ebayPrice.toFixed(2) : '—'}</td>
-              <td>
-                <button class="list-btn" onclick="openModal(${JSON.stringify(p).replace(/"/g, '&quot;')})">List on eBay</button>
-              </td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>`;
-    document.getElementById('search-results').innerHTML = html;
+  function renderProducts(items, skuMap) {
+    skuMap = skuMap || {};
+    let rows = '';
+    items.forEach(function(p) {
+      const itemId = p.sku ? (skuMap[p.sku] || null) : null;
+      const isListed = !!itemId;
+      const listBtnClass = isListed ? 'list-btn listed' : 'list-btn unlisted';
+      const listBtnText = isListed ? '\u2713 Listed on eBay' : 'List on eBay';
+      const listBtn = '<button class="' + listBtnClass + '" onclick="openModal(' + JSON.stringify(p).replace(/"/g, '&quot;') + ')">' + listBtnText + '</button>';
+      const removeBtn = isListed ? ' <button class="remove-btn" onclick="removeListing(\''  + itemId + '\', \'' + p.sku + '\')">Remove</button>' : '';
+      rows += '<tr>' +
+        '<td><div class="prod-name">' + esc(p.name) + '</div>' + (p.sku ? '<div class="prod-sku">SKU: ' + esc(p.sku) + '</div>' : '') + '</td>' +
+        '<td class="price-sq">' + (p.squarePrice > 0 ? '$' + p.squarePrice.toFixed(2) : '—') + '</td>' +
+        '<td class="price-eb">' + (p.ebayPrice > 0 ? '$' + p.ebayPrice.toFixed(2) : '—') + '</td>' +
+        '<td style="display:flex;gap:6px;align-items:center;">' + listBtn + removeBtn + '</td>' +
+        '</tr>';
+    });
+    document.getElementById('search-results').innerHTML =
+      '<table class="prod-table"><thead><tr><th>Product</th><th>Square Price</th><th>eBay Price</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  async function removeListing(itemId, sku) {
+    if (!confirm('Remove this listing from eBay?')) return;
+    try {
+      const res = await fetch('/api/ebay/end-listing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+        body: JSON.stringify({ itemId })
+      });
+      const data = await res.json();
+      if (data.error) { showToast('Error: ' + data.error, true); return; }
+      showToast('Listing removed from eBay');
+      const skus = lastSearchItems.map(p => p.sku).filter(Boolean);
+      if (skus.length) {
+        fetch('/api/ebay/check-listed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+          body: JSON.stringify({ skus })
+        }).then(r => r.json()).then(skuMap => renderProducts(lastSearchItems, skuMap)).catch(() => {});
+      }
+    } catch(e) {
+      showToast('Error: ' + e.message, true);
+    }
   }
 
   // ── Modal ─────────────────────────────────────────────────────────────────
