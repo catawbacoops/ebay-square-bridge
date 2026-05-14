@@ -790,6 +790,112 @@ app.post("/api/claude/autofill", auth, async (req, res) => {
   }
 });
 
+// ── Claude: generate branded eBay HTML description ──────────────────────────
+app.post("/api/claude/generate-description", auth, async (req, res) => {
+  const { name, description, sku, weight, imageUrl } = req.body;
+
+  const prompt = `You are writing eBay listing copy for The Grain Mill Co-op, a bulk grain and baking supplies store in Wake Forest, NC that ships from Dutch Amish Country, PA.
+
+Given the product info below, return ONLY a JSON object with two fields:
+- "about": 2-3 sentence compelling product description for eBay buyers (plain text, no HTML)
+- "ingredients": ingredients list as plain text (e.g. "100% Hard Red Wheat Kernels. No additives, no preservatives." — if this is not a food item with ingredients, return an empty string)
+
+Be specific to the product. Mention use cases (baking, grinding, food storage, etc.) where relevant. Keep it factual and helpful. Do not mention any website or external links.
+
+Product name: ${name}
+Existing description: ${description || "None"}
+Weight: ${weight ? weight + " lbs" : "unknown"}
+SKU: ${sku || "unknown"}
+
+Return ONLY valid JSON, no markdown, no explanation.`;
+
+  try {
+    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY || "",
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 500,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    const claudeData = await claudeRes.json();
+    const text = claudeData.content?.[0]?.text || "{}";
+    const clean = text.replace(/```json|```/g, "").trim();
+    const { about, ingredients } = JSON.parse(clean);
+
+    // Build the branded HTML template
+    const weightDisplay = weight ? weight + " lb" : "—";
+    const imgTag = imageUrl
+      ? `<img src="${imageUrl}" alt="${name}" style="width:100%;border-radius:6px;border:0.5px solid #d4c4a0;display:block;" onerror="this.style.background='#f9f6ef';this.style.minHeight='140px'" />`
+      : `<div style="width:100%;min-height:140px;background:#f9f6ef;border-radius:6px;border:0.5px solid #d4c4a0;"></div>`;
+
+    const ingredientsSection = ingredients
+      ? `<div style="border-top:0.5px solid #d4c4a0;padding-top:18px;margin-bottom:18px;">
+      <div style="font-size:14px;font-weight:500;color:#3a2e1a;margin-bottom:8px;">Ingredients</div>
+      <div style="font-size:14px;color:#5a4a2a;line-height:1.7;font-family:sans-serif;">${ingredients}</div>
+    </div>`
+      : "";
+
+    const html = `<div style="background:#fff;border-radius:8px;border:0.5px solid #d4c4a0;overflow:hidden;max-width:640px;margin:0 auto;font-family:Georgia,serif;">
+  <div style="background:#9b804a;padding:16px 24px;display:flex;align-items:center;gap:16px;">
+    <img src="${LOGO_URL}" alt="The Grain Mill Co-op" style="height:60px;width:auto;display:block;" />
+    <div style="border-left:0.5px solid #c4a46a;padding-left:16px;">
+      <div style="color:#f2ede3;font-size:13px;font-family:sans-serif;">Bulk Grains &amp; Baking Supplies</div>
+      <div style="color:#d4c4a0;font-size:12px;margin-top:4px;font-family:sans-serif;">Ships UPS Ground from Dutch Amish Country, PA</div>
+    </div>
+  </div>
+  <div style="padding:24px;">
+    <div style="display:grid;grid-template-columns:180px 1fr;gap:20px;margin-bottom:24px;align-items:start;">
+      <div>${imgTag}</div>
+      <div>
+        <div style="font-size:17px;font-weight:500;color:#3a2e1a;margin-bottom:4px;line-height:1.3;">${name}</div>
+        <div style="font-size:13px;color:#9b804a;font-family:sans-serif;margin-bottom:14px;">SKU: ${sku || "—"}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div style="background:#f9f6ef;border:0.5px solid #d4c4a0;border-radius:6px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:#9b804a;font-family:sans-serif;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">Weight</div>
+            <div style="font-size:15px;font-weight:500;color:#3a2e1a;font-family:sans-serif;">${weightDisplay}</div>
+          </div>
+          <div style="background:#f9f6ef;border:0.5px solid #d4c4a0;border-radius:6px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:#9b804a;font-family:sans-serif;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">Condition</div>
+            <div style="font-size:15px;font-weight:500;color:#3a2e1a;font-family:sans-serif;">New</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="border-top:0.5px solid #d4c4a0;padding-top:18px;margin-bottom:18px;">
+      <div style="font-size:14px;font-weight:500;color:#3a2e1a;margin-bottom:8px;">About this item</div>
+      <div style="font-size:14px;color:#5a4a2a;line-height:1.7;font-family:sans-serif;">${about}</div>
+    </div>
+    ${ingredientsSection}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:0.5px solid #d4c4a0;padding-top:18px;">
+      <div>
+        <div style="font-size:14px;font-weight:500;color:#3a2e1a;margin-bottom:8px;">Shipping</div>
+        <div style="font-size:13px;color:#5a4a2a;line-height:1.7;font-family:sans-serif;">Ships UPS Ground from Dutch Amish Country, PA. Orders typically ship within 2–3 business days. Calculated shipping to your location at checkout.</div>
+      </div>
+      <div>
+        <div style="font-size:14px;font-weight:500;color:#3a2e1a;margin-bottom:8px;">Returns</div>
+        <div style="font-size:13px;color:#5a4a2a;line-height:1.7;font-family:sans-serif;">All sales final once parcel is opened. Unopened items may be refused at delivery. Quality issues? Contact us within 14 days for an RMA and return label.</div>
+      </div>
+    </div>
+  </div>
+  <div style="background:#9b804a;padding:13px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <span style="color:#f2ede3;font-size:12px;font-family:sans-serif;">The Grain Mill Co-op &middot; 230 S Main St, Wake Forest, NC 27587</span>
+    <span style="color:#d4c4a0;font-size:12px;font-family:sans-serif;">Bulk grains, flours &amp; baking supplies</span>
+  </div>
+</div>`;
+
+    res.json({ html, about, ingredients });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Debug: preview values without sending to eBay ────────────────────────────
 app.post("/api/ebay/preview-xml", auth, async (req, res) => {
   const { name, ebayPrice, quantity, categoryId, conditionId, markup, imageUrl, brand, itemType, weightLbs } = req.body;
