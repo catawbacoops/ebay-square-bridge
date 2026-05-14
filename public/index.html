@@ -296,6 +296,12 @@
         </div>
       </div>
       <div class="panel-body">
+        <div class="sort-row" style="margin-bottom:8px;">
+          <span class="sort-label">Sort by:</span>
+          <button class="sort-btn" data-lsort="title" onclick="setListingSort('title')">Title</button>
+          <button class="sort-btn active" data-lsort="sku" onclick="setListingSort('sku')">SKU</button>
+          <button class="sort-dir-btn" id="listing-sort-dir" onclick="toggleListingSortDir()" title="Toggle direction">↑</button>
+        </div>
         <input type="text" id="listing-search" placeholder="Filter listings…" oninput="filterListings()" style="width:100%;margin-bottom:12px;font-size:13px;padding:7px 10px;border:1.5px solid #ddd;border-radius:7px;outline:none;" />
         <div id="ebay-listings"><div class="empty-state">Loading your eBay listings…</div></div>
         <div id="listing-pages" style="display:flex;gap:8px;margin-top:12px;justify-content:center;"></div>
@@ -405,6 +411,8 @@
   let listedCount = 0;
   let ordersCount = 0;
   let allEbayListings = [];
+  let listingSort = 'sku';
+  let listingSortAsc = true;
   let listedSkus = new Set();
   let currentListingPage = 1;
 
@@ -793,15 +801,41 @@
     renderListings(filtered);
   }
 
+  function sortedListings(listings) {
+    return listings.slice().sort(function(a, b) {
+      const av = listingSort === 'sku' ? (a.sku || '') : (a.title || '');
+      const bv = listingSort === 'sku' ? (b.sku || '') : (b.title || '');
+      const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
+      return listingSortAsc ? cmp : -cmp;
+    });
+  }
+
+  function setListingSort(field) {
+    if (listingSort === field) { listingSortAsc = !listingSortAsc; }
+    else { listingSort = field; listingSortAsc = true; }
+    document.querySelectorAll('[data-lsort]').forEach(b => b.classList.toggle('active', b.dataset.lsort === field));
+    document.getElementById('listing-sort-dir').textContent = listingSortAsc ? '↑' : '↓';
+    filterListings();
+  }
+
+  function toggleListingSortDir() {
+    listingSortAsc = !listingSortAsc;
+    document.getElementById('listing-sort-dir').textContent = listingSortAsc ? '↑' : '↓';
+    filterListings();
+  }
+
   function renderListings(listings) {
     const el = document.getElementById('ebay-listings');
     if (!listings.length) { el.innerHTML = '<div class="empty-state">No listings found</div>'; return; }
 
-    // Find duplicate SKUs
+    listings = sortedListings(listings);
     const skuCount = {};
     listings.forEach(l => { if (l.sku) skuCount[l.sku] = (skuCount[l.sku] || 0) + 1; });
 
-    el.innerHTML = '<table class="listings-table"><thead><tr><th>Title</th><th>SKU</th><th>Price</th><th>Qty</th><th></th></tr></thead><tbody>' +
+    const thTitle = '<th class="sortable' + (listingSort==='title'?' sort-active':'') + '" onclick="setListingSort(\'title\')">Title ' + (listingSort==='title'?(listingSortAsc?'↑':'↓'):'') + '</th>';
+    const thSku   = '<th class="sortable' + (listingSort==='sku'?' sort-active':'') + '" onclick="setListingSort(\'sku\')">SKU ' + (listingSort==='sku'?(listingSortAsc?'↑':'↓'):'') + '</th>';
+
+    el.innerHTML = '<table class="listings-table"><thead><tr>' + thTitle + thSku + '<th>Price</th><th>Qty</th><th></th></tr></thead><tbody>' +
       listings.map(l => {
         const isDupe = l.sku && skuCount[l.sku] > 1;
         const removeBtn = '<button class="remove-btn" onclick="removeListing(\'' + l.itemId + '\', \'' + (l.sku||'') + '\')">Remove</button>';
