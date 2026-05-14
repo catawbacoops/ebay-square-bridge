@@ -121,6 +121,17 @@
       cursor: pointer; white-space: nowrap;
     }
     .remove-btn:hover { background: #fff0f0; }
+    .sync-price-btn {
+      padding: 6px 12px; background: #fff3cd; color: #856404;
+      border: 1.5px solid #ffc107; border-radius: 6px; font-size: 12px; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+    }
+    .sync-price-btn:hover { background: #ffe8a1; }
+    .sync-price-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .row-mismatch { background: #fffbf0; }
+    .row-mismatch:hover { background: #fff5d6 !important; }
+    .price-mismatch { color: #856404; font-weight: 600; font-size: 12px; }
+    .action-cell { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 
     .empty-state { text-align: center; padding: 32px; color: #aaa; font-size: 14px; }
 
@@ -447,21 +458,71 @@
     skuMap = skuMap || {};
     let rows = '';
     items.forEach(function(p) {
-      const itemId = p.sku ? (skuMap[p.sku] || null) : null;
-      const isListed = !!itemId;
+      const info = p.sku ? (skuMap[p.sku] || null) : null;
+      const isListed = !!(info && info.itemId);
+      const itemId = isListed ? info.itemId : null;
+      const ebayLivePrice = isListed ? info.ebayPrice : null;
+
+      // Price mismatch: compare live eBay price vs current Square×markup
+      const targetPrice = p.ebayPrice;
+      const hasMismatch = isListed && ebayLivePrice !== null && Math.abs(ebayLivePrice - targetPrice) >= 0.02;
+
       const listBtnClass = isListed ? 'list-btn listed' : 'list-btn unlisted';
       const listBtnText = isListed ? '\u2713 Listed on eBay' : 'List on eBay';
       const listBtn = '<button class="' + listBtnClass + '" onclick="openModal(' + JSON.stringify(p).replace(/"/g, '&quot;') + ')">' + listBtnText + '</button>';
-      const removeBtn = isListed ? ' <button class="remove-btn" onclick="removeListing(\''  + itemId + '\', \'' + p.sku + '\')">Remove</button>' : '';
-      rows += '<tr>' +
+      const removeBtn = isListed ? '<button class="remove-btn" onclick="removeListing(\''  + itemId + '\', \'' + p.sku + '\')">Remove</button>' : '';
+      const syncBtn = hasMismatch ? '<button class="sync-price-btn" onclick="syncPrice(\''  + itemId + '\', ' + targetPrice + ', \'' + p.sku + '\')">\u21bb Sync $' + targetPrice.toFixed(2) + '</button>' : '';
+
+      // Price cell — show mismatch warning if needed
+      let priceCell;
+      if (hasMismatch) {
+        priceCell = '<td class="price-eb">' +
+          '<span class="price-mismatch" title="eBay live: $' + ebayLivePrice.toFixed(2) + ' · Square\u00d7markup: $' + targetPrice.toFixed(2) + '">' +
+          '\u26a0\ufe0f $' + ebayLivePrice.toFixed(2) + ' \u2192 $' + targetPrice.toFixed(2) +
+          '</span></td>';
+      } else {
+        priceCell = '<td class="price-eb">' + (p.ebayPrice > 0 ? '$' + p.ebayPrice.toFixed(2) : '—') + '</td>';
+      }
+
+      rows += '<tr' + (hasMismatch ? ' class="row-mismatch"' : '') + '>' +
         '<td><div class="prod-name">' + esc(p.name) + '</div>' + (p.sku ? '<div class="prod-sku">SKU: ' + esc(p.sku) + '</div>' : '') + '</td>' +
         '<td class="price-sq">' + (p.squarePrice > 0 ? '$' + p.squarePrice.toFixed(2) : '—') + '</td>' +
-        '<td class="price-eb">' + (p.ebayPrice > 0 ? '$' + p.ebayPrice.toFixed(2) : '—') + '</td>' +
-        '<td style="display:flex;gap:6px;align-items:center;">' + listBtn + removeBtn + '</td>' +
+        priceCell +
+        '<td class="action-cell">' + listBtn + syncBtn + removeBtn + '</td>' +
         '</tr>';
     });
     document.getElementById('search-results').innerHTML =
       '<table class="prod-table"><thead><tr><th>Product</th><th>Square Price</th><th>eBay Price</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function refreshSkuStatus() {
+    const skus = lastSearchItems.map(p => p.sku).filter(Boolean);
+    if (!skus.length) return;
+    fetch('/api/ebay/check-listed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+      body: JSON.stringify({ skus })
+    }).then(r => r.json()).then(skuMap => renderProducts(lastSearchItems, skuMap)).catch(() => {});
+  }
+
+  async function syncPrice(itemId, newPrice, sku) {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Syncing…';
+    try {
+      const res = await fetch('/api/ebay/sync-price', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+        body: JSON.stringify({ itemId, newPrice })
+      });
+      const data = await res.json();
+      if (data.error) { showToast('Error: ' + data.error, true); btn.disabled = false; btn.textContent = '\u21bb Sync'; return; }
+      showToast('Price updated to $' + parseFloat(newPrice).toFixed(2) + ' on eBay');
+      refreshSkuStatus();
+    } catch(e) {
+      showToast('Error: ' + e.message, true);
+      btn.disabled = false;
+    }
   }
 
   async function removeListing(itemId, sku) {
@@ -475,14 +536,7 @@
       const data = await res.json();
       if (data.error) { showToast('Error: ' + data.error, true); return; }
       showToast('Listing removed from eBay');
-      const skus = lastSearchItems.map(p => p.sku).filter(Boolean);
-      if (skus.length) {
-        fetch('/api/ebay/check-listed', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
-          body: JSON.stringify({ skus })
-        }).then(r => r.json()).then(skuMap => renderProducts(lastSearchItems, skuMap)).catch(() => {});
-      }
+      refreshSkuStatus();
     } catch(e) {
       showToast('Error: ' + e.message, true);
     }
