@@ -636,14 +636,13 @@ app.get("/api/ebay/listings", auth, async (req, res) => {
   }
 });
 
-// ── eBay: check if SKUs are listed ───────────────────────────────────────────
+// ── eBay: check if SKUs are listed (also returns current eBay price) ─────────
 // POST { skus: ["155009", "155010", ...] }
-// Returns { "155009": "123456789012", "155010": null, ... }
+// Returns { "155009": { itemId: "123456", ebayPrice: 31.75 }, ... }
 app.post("/api/ebay/check-listed", auth, async (req, res) => {
   const { skus } = req.body;
   if (!skus || !skus.length) return res.json({});
 
-  // Fetch all active listings (up to 200)
   const skuSet = new Set(skus.map(String));
   const result = {};
   skus.forEach(s => { result[String(s)] = null; });
@@ -677,13 +676,58 @@ app.post("/api/ebay/check-listed", auth, async (req, res) => {
 
       items.forEach(item => {
         const sku = String(item.SKU || "");
-        if (skuSet.has(sku)) result[sku] = item.ItemID;
+        if (skuSet.has(sku)) {
+          const price = parseFloat(
+            item.SellingStatus?.CurrentPrice?.["_"] ||
+            item.BuyItNowPrice?.["_"] ||
+            item.StartPrice?.["_"] || "0"
+          );
+          result[sku] = { itemId: item.ItemID, ebayPrice: price };
+        }
       });
 
       const totalPages = parseInt(resp?.ActiveList?.PaginationResult?.TotalNumberOfPages || "1");
       if (page >= totalPages) break;
     }
     res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── eBay: sync price for a single listing ────────────────────────────────────
+// POST { itemId, newPrice }
+app.post("/api/ebay/sync-price", auth, async (req, res) => {
+  const { itemId, newPrice } = req.body;
+  if (!itemId || !newPrice) return res.status(400).json({ error: "itemId and newPrice required" });
+
+  const xml = create({ version: "1.0", encoding: "utf-8" })
+    .ele("ReviseFixedPriceItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+      .ele("RequesterCredentials")
+        .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+      .up()
+      .ele("Item")
+        .ele("ItemID").txt(String(itemId)).up()
+        .ele("StartPrice").txt(String(parseFloat(newPrice).toFixed(2))).up()
+      .up()
+    .up()
+    .end({ prettyPrint: false });
+
+  try {
+    const ebayRes = await fetch(EBAY_API_URL, {
+      method: "POST",
+      headers: ebayHeaders("ReviseFixedPriceItem"),
+      body: xml,
+    });
+    const parsed = await parseXml(await ebayRes.text());
+    const resp = parsed?.ReviseFixedPriceItemResponse;
+
+    if (resp?.Ack === "Failure") {
+      const errors = [].concat(resp?.Errors || []);
+      return res.status(400).json({ error: errors.map(e => e.LongMessage || e.ShortMessage).join("; ") });
+    }
+
+    res.json({ success: true, itemId, newPrice: parseFloat(newPrice).toFixed(2) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
