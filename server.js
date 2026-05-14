@@ -143,7 +143,7 @@ app.get("/api/square/products", auth, async (req, res) => {
 
 // ── eBay: list item ──────────────────────────────────────────────────────────
 app.post("/api/ebay/list", auth, async (req, res) => {
-  const { name, description, sku, ebayPrice, quantity, categoryId, conditionId, markup, imageUrl, brand, itemType, weightLbs, shippingCost } = req.body;
+  const { name, description, sku, ebayPrice, quantity, categoryId, conditionId, markup, imageUrl, brand, itemType, weightLbs } = req.body;
 
   if (!name || !ebayPrice) return res.status(400).json({ error: "Missing required fields" });
   if (!brand) return res.status(400).json({ error: "Brand is required by eBay" });
@@ -229,7 +229,7 @@ app.post("/api/ebay/list", auth, async (req, res) => {
           .ele("MeasurementUnit").txt("English").up()
           .ele("WeightMajor").txt(String(weightPounds)).up()
           .ele("WeightMinor").txt(String(weightOunces)).up()
-          .ele("ShippingPackage").txt("BulkyGoods").up()
+          .ele("ShippingPackage").txt("ExtraLargePack").up()
           .ele("ShippingIrregular").txt("true").up()
         .up()
         .ele("ReturnPolicy")
