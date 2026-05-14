@@ -131,7 +131,13 @@ app.get("/api/square/products", auth, async (req, res) => {
         ebayPrice,
         inStock: variationData.track_inventory === false || true,
         imageUrl: imageId ? (imageUrlMap[imageId] || "") : "",
-        weight: variationData.weight ? variationData.weight.weight : null,
+        weight: variationData.weight
+          ? (variationData.weight.value
+              ? (variationData.weight.unit === "KILOGRAM"
+                  ? parseFloat((variationData.weight.value * 2.20462).toFixed(3))
+                  : parseFloat(variationData.weight.value))
+              : null)
+          : null,
       };
     });
 
@@ -509,6 +515,37 @@ app.post("/webhook/ebay-account-deletion", (req, res) => {
   // This app doesn't store buyer PII, so nothing to delete — just acknowledge.
   console.log("eBay account deletion notification received:", JSON.stringify(req.body).substring(0, 200));
   res.status(200).json({ message: "Acknowledged" });
+});
+
+// ── Claude: auto-fill category, brand, type, weight ─────────────────────────
+app.post("/api/claude/autofill", auth, async (req, res) => {
+  const { name, description, weight } = req.body;
+
+  const prompt = "You are an eBay listing expert for a grain mill and whole foods store. Given a product name and description, return ONLY a JSON object with these fields:\n- categoryId: the best eBay US category ID (number as string)\n- brand: brand name from the product (or Unbranded)\n- type: short product type for eBay item specifics\n- weight: weight in lbs as a number (use provided weight, or extract from name, or null)\n- categoryName: human readable category name\n\nProduct name: " + name + "\nDescription: " + (description || "None") + "\nKnown weight (lbs): " + (weight || "unknown") + "\n\nCategory IDs to use:\n257993: Grains & Rice - whole unground grain kernels (wheat berries, corn, barley, millet, quinoa, rye, buckwheat, spelt berries)\n257947: Flour - already ground into flour (all-purpose, bread, wheat, spelt, rye, almond, coconut flour)\n257958: Breakfast Cereals & Oats - oats, oatmeal, granola, grits, farina, hot cereals\n257952: Yeast Leavening & Binders - yeast, baking powder, baking soda, cream of tartar, xanthan gum\n257951: Sugar & Sweeteners - sugar, honey, maple syrup, molasses, stevia\n257944: Bread & Pastry Mixes\n257945: Cake & Cupcake Mixes\n257946: Cookie & Brownie Mixes\n257989: Cooking Oils - olive oil, coconut oil, vegetable oil\n257978: Salt - sea salt, kosher salt, himalayan, canning salt\n257977: Pepper & Chili - black pepper, cayenne, paprika, chili powder\n257980: Spices - cinnamon, cumin, turmeric, nutmeg\n257979: Seasoning Mixes & Blends\n257983: Honey\n257984: Jam Jelly & Preserves\n257985: Nut Butters - peanut butter, almond butter, tahini\n257991: Dried Beans & Pulses - beans, lentils, split peas, chickpeas\n257988: Longlife Cooking & Baking Fats - butter powder, shortening, ghee\n258012: Dried Fruit & Nuts - raisins, dried fruit, nuts, seeds, trail mix\n258013: Popcorn kernels\n257995: Prepared Food & Ready Meals - mixes, soup mixes\n257971: Freeze-dried or Dehydrated Fruits & Vegetables\n20626: Food Storage - mylar bags, vacuum seal bags, oxygen absorbers, mason jars, buckets, canning supplies, storage containers\n184638: Grain Mills & Food Mills - manual or electric grain mills, wheat grinders\n133696: Food Dehydrators\n79631: Other Food & Beverages - anything food that does not fit above\n\nReturn ONLY valid JSON, no markdown, no explanation.";
+
+  try {
+    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY || "",
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 300,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    const claudeData = await claudeRes.json();
+    const text = claudeData.content?.[0]?.text || "{}";
+    const clean = text.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(clean);
+    res.json(parsed);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── Debug: preview values without sending to eBay ────────────────────────────
