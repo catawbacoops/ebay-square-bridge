@@ -329,8 +329,18 @@
       <div style="font-size:11px;color:#aaa;margin-top:3px;" id="m-title-count">0/80</div>
     </div>
     <div class="form-row">
-      <label>Description</label>
-      <textarea id="m-desc"></textarea>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <label style="margin-bottom:0;">Description</label>
+        <div style="display:flex;gap:0;border:1px solid #ddd;border-radius:6px;overflow:hidden;">
+          <button id="desc-tab-preview" onclick="setDescTab('preview')" style="padding:3px 10px;font-size:11px;background:#E53238;color:#fff;border:none;cursor:pointer;">Preview</button>
+          <button id="desc-tab-edit" onclick="setDescTab('edit')" style="padding:3px 10px;font-size:11px;background:#f5f5f5;color:#555;border:none;cursor:pointer;">Edit HTML</button>
+        </div>
+      </div>
+      <div id="desc-preview-wrap" style="border:1px solid #ddd;border-radius:6px;overflow:auto;max-height:340px;background:#f2ede3;padding:12px;">
+        <div id="desc-preview-inner" style="pointer-events:none;transform:scale(0.7);transform-origin:top left;width:143%;"></div>
+      </div>
+      <textarea id="m-desc" style="display:none;height:180px;font-size:11px;font-family:monospace;"></textarea>
+      <div id="desc-gen-status" style="font-size:12px;color:#888;margin-top:4px;min-height:16px;"></div>
     </div>
     <div class="form-two">
       <div class="form-row">
@@ -630,6 +640,10 @@
     document.getElementById('m-brand').value = '';
     document.getElementById('m-type').value = '';
     document.getElementById('m-weight').value = (product.weight && product.weight > 0) ? product.weight : '';
+    document.getElementById('m-desc').value = '';
+    document.getElementById('desc-preview-inner').innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;padding:20px;">Generating description…</div>';
+    document.getElementById('desc-gen-status').textContent = '';
+    setDescTab('preview');
     document.getElementById('modal-err').textContent = '';
     document.getElementById('submit-btn').disabled = true;
     document.getElementById('submit-btn').textContent = 'List on eBay';
@@ -691,6 +705,57 @@
     }
 
     document.getElementById('submit-btn').disabled = false;
+
+    // Generate branded HTML description via Claude
+    const descStatus = document.getElementById('desc-gen-status');
+    descStatus.textContent = '✦ Generating description…';
+    descStatus.style.color = '#9b804a';
+    try {
+      const descRes = await fetch('/api/claude/generate-description', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+        body: JSON.stringify({
+          name: product.name,
+          description: product.description || '',
+          sku: product.sku || '',
+          weight: product.weight || null,
+          imageUrl: product.imageUrl || ''
+        })
+      });
+      const descData = await descRes.json();
+      if (descData.html) {
+        document.getElementById('m-desc').value = descData.html;
+        document.getElementById('desc-preview-inner').innerHTML = descData.html;
+        descStatus.textContent = '✓ Description generated';
+        descStatus.style.color = '#1D9E75';
+      } else {
+        descStatus.textContent = descData.error || 'Could not generate description';
+        descStatus.style.color = '#c42b30';
+      }
+    } catch(e) {
+      descStatus.textContent = 'Description generation failed — edit manually';
+      descStatus.style.color = '#aaa';
+    }
+  }
+
+  function setDescTab(tab) {
+    const preview = document.getElementById('desc-preview-wrap');
+    const edit = document.getElementById('m-desc');
+    const btnPreview = document.getElementById('desc-tab-preview');
+    const btnEdit = document.getElementById('desc-tab-edit');
+    if (tab === 'preview') {
+      preview.style.display = 'block';
+      edit.style.display = 'none';
+      btnPreview.style.background = '#E53238'; btnPreview.style.color = '#fff';
+      btnEdit.style.background = '#f5f5f5'; btnEdit.style.color = '#555';
+      // sync edits back to preview
+      document.getElementById('desc-preview-inner').innerHTML = edit.value;
+    } else {
+      preview.style.display = 'none';
+      edit.style.display = 'block';
+      btnPreview.style.background = '#f5f5f5'; btnPreview.style.color = '#555';
+      btnEdit.style.background = '#E53238'; btnEdit.style.color = '#fff';
+    }
   }
 
   function closeModal() {
