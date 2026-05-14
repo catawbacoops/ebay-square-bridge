@@ -247,6 +247,9 @@
 <div class="modal-overlay" id="modal">
   <div class="modal">
     <h3>List on eBay</h3>
+    <!-- Autofill status -->
+    <div id="autofill-status" style="font-size:12px;color:#888;margin-bottom:12px;min-height:16px;"></div>
+
     <!-- Photo preview -->
     <div id="m-photo-wrap" style="display:none;margin-bottom:14px;">
       <img id="m-photo" src="" alt="Product photo" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #eee;" />
@@ -305,14 +308,21 @@
       </div>
       <div class="form-row">
         <label>Weight (lbs) <span style="color:#c42b30;">*</span></label>
-        <input type="number" id="m-weight" step="0.01" min="0.01" placeholder="e.g. 50.4" oninput="updateShipping()" />
+        <input type="number" id="m-weight" step="0.01" min="0.01" placeholder="e.g. 50.4" />
       </div>
     </div>
     <div class="form-row">
-      <label>Flat Shipping Cost ($) <span style="color:#c42b30;">*</span></label>
-      <input type="number" id="m-shipping" step="0.01" min="0" placeholder="Auto-calculated from weight" />
-      <div style="font-size:11px;color:#aaa;margin-top:3px;">Auto-calculated as $10 + $0.20/lb — override if needed</div>
+      <label>Package Dimensions (inches) L × W × H</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="number" id="m-depth" step="1" min="1" placeholder="L" style="width:70px;" />
+        <span style="color:#aaa;">×</span>
+        <input type="number" id="m-width" step="1" min="1" placeholder="W" style="width:70px;" />
+        <span style="color:#aaa;">×</span>
+        <input type="number" id="m-height" step="1" min="1" placeholder="H" style="width:70px;" />
+      </div>
+      <div style="font-size:11px;color:#aaa;margin-top:3px;">Required by UPS for packages over 3 cubic feet</div>
     </div>
+
     <div style="font-size:12px;color:#888;margin-top:4px;">
       Need the right category ID? Find it at
       <a href="https://www.ebay.com/sch/allcategories/all-categories" target="_blank" style="color:#E53238;">ebay.com/sch/allcategories</a>
@@ -421,7 +431,7 @@
   }
 
   // ── Modal ─────────────────────────────────────────────────────────────────
-  function openModal(product) {
+  async function openModal(product) {
     currentProduct = product;
     document.getElementById('m-title').value = product.name.substring(0, 80);
     document.getElementById('m-desc').value = product.description || product.name;
@@ -431,11 +441,9 @@
     document.getElementById('m-cat').value = '177762';
     document.getElementById('m-brand').value = '';
     document.getElementById('m-type').value = '';
-    const w = (product.weight && product.weight > 0) ? product.weight : 0;
-    document.getElementById('m-weight').value = w || '';
-    document.getElementById('m-shipping').value = w > 0 ? Math.max(10, parseFloat((10 + w * 0.20).toFixed(2))) : '';
+    document.getElementById('m-weight').value = (product.weight && product.weight > 0) ? product.weight : '';
     document.getElementById('modal-err').textContent = '';
-    document.getElementById('submit-btn').disabled = false;
+    document.getElementById('submit-btn').disabled = true;
     document.getElementById('submit-btn').textContent = 'List on eBay';
     updateTitleCount();
 
@@ -452,6 +460,42 @@
     }
 
     document.getElementById('modal').classList.add('open');
+
+    // Auto-fill category, brand, type, weight using Claude
+    const autofillEl = document.getElementById('autofill-status');
+    autofillEl.textContent = '🤖 Auto-filling fields...';
+    autofillEl.style.color = '#888';
+
+    try {
+      const res = await fetch('/api/claude/autofill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+        body: JSON.stringify({
+          name: product.name,
+          description: product.description || '',
+          weight: product.weight || null
+        })
+      });
+      const data = await res.json();
+      if (!data.error) {
+        if (data.categoryId) document.getElementById('m-cat').value = data.categoryId;
+        if (data.brand) document.getElementById('m-brand').value = data.brand;
+        if (data.type) document.getElementById('m-type').value = data.type;
+        if (data.weight && !document.getElementById('m-weight').value) {
+          document.getElementById('m-weight').value = data.weight;
+        }
+        autofillEl.textContent = data.categoryName ? '✓ Category: ' + data.categoryName : '✓ Fields auto-filled';
+        autofillEl.style.color = '#1D9E75';
+      } else {
+        autofillEl.textContent = 'Auto-fill unavailable — fill in manually';
+        autofillEl.style.color = '#aaa';
+      }
+    } catch(e) {
+      autofillEl.textContent = 'Auto-fill unavailable — fill in manually';
+      autofillEl.style.color = '#aaa';
+    }
+
+    document.getElementById('submit-btn').disabled = false;
   }
 
   function closeModal() {
@@ -461,13 +505,6 @@
 
   document.getElementById('m-title').addEventListener('input', updateTitleCount);
 
-  function updateShipping() {
-    const w = parseFloat(document.getElementById('m-weight').value) || 0;
-    if (w > 0) {
-      const cost = Math.max(10, parseFloat((10 + w * 0.20).toFixed(2)));
-      document.getElementById('m-shipping').value = cost.toFixed(2);
-    }
-  }
   function updateTitleCount() {
     const len = document.getElementById('m-title').value.length;
     document.getElementById('m-title-count').textContent = len + '/80';
@@ -489,7 +526,9 @@
     const itemType = document.getElementById('m-type').value.trim();
     const imageUrl = currentProduct?.imageUrl || '';
     const weightLbs = parseFloat(document.getElementById('m-weight').value);
-    const shippingCost = parseFloat(document.getElementById('m-shipping').value) || Math.max(10, parseFloat((10 + weightLbs * 0.20).toFixed(2)));
+    const pkgDepth = parseInt(document.getElementById('m-depth').value) || 0;
+    const pkgWidth = parseInt(document.getElementById('m-width').value) || 0;
+    const pkgHeight = parseInt(document.getElementById('m-height').value) || 0;
 
     if (!title) { errEl.textContent = 'Title is required.'; return; }
     if (!price || price < 0.99) { errEl.textContent = 'Price must be at least $0.99.'; return; }
@@ -509,7 +548,7 @@
           name: title, description: desc, sku,
           ebayPrice: price, quantity: qty,
           categoryId: cat, conditionId: cond,
-          brand, itemType, imageUrl, weightLbs, shippingCost
+          brand, itemType, imageUrl, weightLbs, pkgDepth, pkgWidth, pkgHeight
         })
       });
       const data = await res.json();
