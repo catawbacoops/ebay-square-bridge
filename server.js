@@ -81,15 +81,13 @@ app.get("/api/square/products", auth, async (req, res) => {
   if (!q || q.length < 2) return res.json([]);
 
   try {
-    // Search catalog items
+    // Search catalog items by name/description
     const searchRes = await fetch(`${SQUARE_BASE}/v2/catalog/search`, {
       method: "POST",
       headers: squareHeaders(),
       body: JSON.stringify({
         object_types: ["ITEM"],
-        query: {
-          text_query: { keywords: [q] },
-        },
+        query: { text_query: { keywords: [q] } },
         limit: 50,
       }),
     });
@@ -97,6 +95,43 @@ app.get("/api/square/products", auth, async (req, res) => {
     if (!searchRes.ok) {
       return res.status(searchRes.status).json({ error: searchData.errors?.[0]?.detail || "Search failed" });
     }
+
+    // Also search ITEM_VARIATION by SKU (Square text_query doesn't index SKUs on ITEM)
+    let skuItems = [];
+    try {
+      const skuRes = await fetch(`${SQUARE_BASE}/v2/catalog/search`, {
+        method: "POST",
+        headers: squareHeaders(),
+        body: JSON.stringify({
+          object_types: ["ITEM_VARIATION"],
+          query: { text_query: { keywords: [q] } },
+          limit: 50,
+        }),
+      });
+      const skuData = await skuRes.json();
+      const variations = (skuData.objects || []).filter(v =>
+        (v.item_variation_data?.sku || "").toLowerCase().includes(q)
+      );
+      // Collect parent item IDs
+      const parentIds = [...new Set(variations.map(v => v.item_variation_data?.item_id).filter(Boolean))];
+      if (parentIds.length) {
+        const parentRes = await fetch(`${SQUARE_BASE}/v2/catalog/batch-retrieve`, {
+          method: "POST",
+          headers: squareHeaders(),
+          body: JSON.stringify({ object_ids: parentIds }),
+        });
+        const parentData = await parentRes.json();
+        skuItems = (parentData.objects || []).filter(o => o.type === "ITEM");
+      }
+    } catch(e) { /* SKU search optional */ }
+
+    // Merge results, deduplicate by catalogId
+    const seen = new Set((searchData.objects || []).map(o => o.id));
+    const mergedObjects = [
+      ...(searchData.objects || []),
+      ...skuItems.filter(o => !seen.has(o.id)),
+    ];
+    searchData.objects = mergedObjects;
 
     // Collect image IDs to batch fetch
     const imageIds = [];
