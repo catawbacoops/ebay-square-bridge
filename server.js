@@ -131,6 +131,7 @@ app.get("/api/square/products", auth, async (req, res) => {
         ebayPrice,
         inStock: variationData.track_inventory === false || true,
         imageUrl: imageId ? (imageUrlMap[imageId] || "") : "",
+        weightRaw: JSON.stringify(variationData.weight || null),
         weight: variationData.weight
           ? (variationData.weight.value
               ? (variationData.weight.unit === "KILOGRAM"
@@ -205,7 +206,7 @@ app.post("/api/ebay/list", auth, async (req, res) => {
       .up();
   }
 
-  // Add Brand and Type as item specifics
+  // Add Brand, Type, and Product as item specifics
   itemNode = itemNode
     .ele("ItemSpecifics")
       .ele("NameValueList")
@@ -215,6 +216,10 @@ app.post("/api/ebay/list", auth, async (req, res) => {
       .ele("NameValueList")
         .ele("Name").txt("Type").up()
         .ele("Value").txt(itemType).up()
+      .up()
+      .ele("NameValueList")
+        .ele("Name").txt("Product").up()
+        .ele("Value").txt(name.substring(0, 65)).up()
       .up()
     .up();
 
