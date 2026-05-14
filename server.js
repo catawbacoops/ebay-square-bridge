@@ -580,6 +580,62 @@ app.post("/api/ebay/preview-xml", auth, async (req, res) => {
   res.json({ debug: { weightLbs, totalOz, weightPounds, weightOunces, skipCondition, categoryId, finalPrice, brand, itemType, hasImage: !!imageUrl } });
 });
 
+// ── eBay: get active listings ─────────────────────────────────────────────────
+app.get("/api/ebay/listings", auth, async (req, res) => {
+  const page = parseInt(req.query.page || "1");
+  const xml = create({ version: "1.0", encoding: "utf-8" })
+    .ele("GetMyeBaySellingRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+      .ele("RequesterCredentials")
+        .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+      .up()
+      .ele("ActiveList")
+        .ele("Include").txt("true").up()
+        .ele("Pagination")
+          .ele("EntriesPerPage").txt("50").up()
+          .ele("PageNumber").txt(String(page)).up()
+        .up()
+        .ele("Sort").txt("TimeLeft").up()
+      .up()
+      .ele("DetailLevel").txt("ReturnAll").up()
+    .up()
+    .end({ prettyPrint: false });
+
+  try {
+    const ebayRes = await fetch(EBAY_API_URL, {
+      method: "POST",
+      headers: ebayHeaders("GetMyeBaySelling"),
+      body: xml,
+    });
+    const xmlText = await ebayRes.text();
+    const parsed = await parseXml(xmlText);
+    const resp = parsed?.GetMyeBaySellingResponse;
+
+    if (resp?.Ack === "Failure") {
+      const errors = [].concat(resp?.Errors || []);
+      return res.status(400).json({ error: errors.map(e => e.LongMessage || e.ShortMessage).join("; ") });
+    }
+
+    const items = [].concat(resp?.ActiveList?.ItemArray?.Item || []);
+    const totalPages = parseInt(resp?.ActiveList?.PaginationResult?.TotalNumberOfPages || "1");
+    const totalItems = parseInt(resp?.ActiveList?.PaginationResult?.TotalNumberOfEntries || "0");
+
+    const listings = items.map(item => ({
+      itemId: item.ItemID,
+      title: item.Title,
+      sku: item.SKU || "",
+      price: parseFloat(item.SellingStatus?.CurrentPrice?.["_"] || item.BuyItNowPrice?.["_"] || 0),
+      quantity: parseInt(item.QuantityAvailable || item.Quantity || 1),
+      url: `https://www.ebay.com/itm/${item.ItemID}`,
+      timeLeft: item.TimeLeft || "",
+      watchCount: parseInt(item.WatchCount || 0),
+    }));
+
+    res.json({ listings, totalPages, totalItems, page });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
