@@ -244,6 +244,7 @@
     </div>
     <div class="header-actions">
       <button class="sync-btn" onclick="syncOrders()" id="sync-btn">↻ Sync eBay Orders</button>
+      <button class="sync-btn" onclick="syncSellability()" id="sellability-btn">✕ Remove Unsellable</button>
       <span style="font-size:13px;color:#888;">
         <span class="status-dot dot-green" id="sq-dot"></span>Square
         &nbsp;
@@ -342,7 +343,7 @@
       </div>
       <div class="form-row">
         <label>Quantity</label>
-        <input type="number" id="m-qty" value="1" min="1" />
+        <input type="number" id="m-qty" value="5" min="1" />
       </div>
     </div>
     <div class="form-two">
@@ -614,7 +615,7 @@
     document.getElementById('m-title').value = product.name.substring(0, 80);
     document.getElementById('m-desc').value = product.description || product.name;
     document.getElementById('m-price').value = product.ebayPrice > 0 ? product.ebayPrice.toFixed(2) : '';
-    document.getElementById('m-qty').value = '1';
+    document.getElementById('m-qty').value = '5';
     document.getElementById('m-sku').value = product.sku || '';
     document.getElementById('m-cat').value = '177762';
     document.getElementById('m-brand').value = '';
@@ -824,6 +825,26 @@
   }
 
   // ── Sync orders ───────────────────────────────────────────────────────────
+  async function syncSellability() {
+    const btn = document.getElementById('sellability-btn');
+    btn.textContent = 'Checking…';
+    btn.classList.add('loading');
+    try {
+      const res = await fetch('/api/sync-sellability', {
+        method: 'POST',
+        headers: { 'x-dashboard-password': PASSWORD }
+      });
+      const data = await res.json();
+      if (data.error) { showToast('Error: ' + data.error, true); }
+      else { showToast('Sellability check complete — unsellable items removed from eBay'); }
+    } catch(e) {
+      showToast('Error: ' + e.message, true);
+    } finally {
+      btn.textContent = '✕ Remove Unsellable';
+      btn.classList.remove('loading');
+    }
+  }
+
   async function syncOrders() {
     const btn = document.getElementById('sync-btn');
     btn.classList.add('loading');
