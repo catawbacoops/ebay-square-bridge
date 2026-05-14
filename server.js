@@ -431,17 +431,178 @@ async function syncLatestEbayOrders() {
 
     for (const order of orders) {
       await createSquareOrderFromEbay(order);
+      await topUpQuantityForOrder(order);
     }
   } catch (e) {
     console.error("syncLatestEbayOrders error:", e.message);
   }
 }
 
+// ── Top up eBay quantity to 5 after a sale ───────────────────────────────────
+const LISTING_QUANTITY = 5;
+
+async function topUpQuantityForOrder(ebayOrder) {
+  try {
+    const transactions = [].concat(ebayOrder.TransactionArray?.Transaction || []);
+    for (const t of transactions) {
+      const itemId = t.Item?.ItemID;
+      if (!itemId) continue;
+
+      const xml = create({ version: "1.0", encoding: "utf-8" })
+        .ele("ReviseFixedPriceItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+          .ele("RequesterCredentials")
+            .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+          .up()
+          .ele("Item")
+            .ele("ItemID").txt(String(itemId)).up()
+            .ele("Quantity").txt(String(LISTING_QUANTITY)).up()
+          .up()
+        .up()
+        .end({ prettyPrint: false });
+
+      const res = await fetch(EBAY_API_URL, {
+        method: "POST",
+        headers: ebayHeaders("ReviseFixedPriceItem"),
+        body: xml,
+      });
+      const parsed = await parseXml(await res.text());
+      const resp = parsed?.ReviseFixedPriceItemResponse;
+      if (resp?.Ack === "Failure") {
+        const errors = [].concat(resp?.Errors || []);
+        console.error(`topUp failed for item ${itemId}:`, errors.map(e => e.ShortMessage).join("; "));
+      } else {
+        console.log(`✓ Quantity topped up to ${LISTING_QUANTITY} for eBay item ${itemId}`);
+      }
+    }
+  } catch (e) {
+    console.error("topUpQuantityForOrder error:", e.message);
+  }
+}
+
+// ── Check Square for not-for-sale items and remove from eBay ─────────────────
+async function removeUnsellableFromEbay() {
+  console.log("Running not-for-sale check…");
+  try {
+    // 1. Get all active eBay listings with SKUs
+    const ebaySkuMap = {}; // sku -> itemId
+    for (let page = 1; page <= 10; page++) {
+      const xml = create({ version: "1.0", encoding: "utf-8" })
+        .ele("GetMyeBaySellingRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+          .ele("RequesterCredentials")
+            .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+          .up()
+          .ele("ActiveList")
+            .ele("Include").txt("true").up()
+            .ele("Pagination")
+              .ele("EntriesPerPage").txt("50").up()
+              .ele("PageNumber").txt(String(page)).up()
+            .up()
+          .up()
+          .ele("DetailLevel").txt("ReturnAll").up()
+        .up()
+        .end({ prettyPrint: false });
+
+      const res = await fetch(EBAY_API_URL, { method: "POST", headers: ebayHeaders("GetMyeBaySelling"), body: xml });
+      const parsed = await parseXml(await res.text());
+      const resp = parsed?.GetMyeBaySellingResponse;
+      const items = [].concat(resp?.ActiveList?.ItemArray?.Item || []);
+      items.forEach(item => {
+        if (item.SKU) ebaySkuMap[String(item.SKU)] = item.ItemID;
+      });
+      const totalPages = parseInt(resp?.ActiveList?.PaginationResult?.TotalNumberOfPages || "1");
+      if (page >= totalPages) break;
+    }
+
+    const listedSkus = Object.keys(ebaySkuMap);
+    if (!listedSkus.length) { console.log("No active eBay listings to check."); return; }
+
+    // 2. Check each SKU against Square — look for not-for-sale status
+    // Square catalog search by SKU — batch check variations
+    const unsellableSkus = [];
+    // We search each SKU individually (Square has no batch SKU lookup by sellability)
+    for (const sku of listedSkus) {
+      try {
+        const res = await fetch(`${SQUARE_BASE}/v2/catalog/search`, {
+          method: "POST",
+          headers: squareHeaders(),
+          body: JSON.stringify({
+            object_types: ["ITEM_VARIATION"],
+            query: { exact_query: { attribute_name: "sku", attribute_value: sku } },
+          }),
+        });
+        const data = await res.json();
+        const variations = data.objects || [];
+        for (const v of variations) {
+          const vd = v.item_variation_data || {};
+          // sellable=false or available_for_purchase=false means not for sale
+          if (vd.sellable === false || vd.available_for_purchase === false) {
+            unsellableSkus.push(sku);
+            break;
+          }
+        }
+      } catch(e) {
+        console.error(`SKU check error for ${sku}:`, e.message);
+      }
+    }
+
+    if (!unsellableSkus.length) {
+      console.log("All listed SKUs are still sellable in Square.");
+      return;
+    }
+
+    // 3. End eBay listings for unsellable SKUs
+    for (const sku of unsellableSkus) {
+      const itemId = ebaySkuMap[sku];
+      console.log(`Removing eBay listing ${itemId} (SKU: ${sku}) — marked not for sale in Square`);
+      try {
+        const xml = create({ version: "1.0", encoding: "utf-8" })
+          .ele("EndFixedPriceItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+            .ele("RequesterCredentials")
+              .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+            .up()
+            .ele("ItemID").txt(String(itemId)).up()
+            .ele("EndingReason").txt("NotAvailable").up()
+          .up()
+          .end({ prettyPrint: false });
+
+        const res = await fetch(EBAY_API_URL, { method: "POST", headers: ebayHeaders("EndFixedPriceItem"), body: xml });
+        const parsed = await parseXml(await res.text());
+        const resp = parsed?.EndFixedPriceItemResponse;
+        if (resp?.Ack === "Failure") {
+          const errors = [].concat(resp?.Errors || []);
+          console.error(`Failed to end listing ${itemId}:`, errors.map(e => e.ShortMessage).join("; "));
+        } else {
+          console.log(`✓ Ended eBay listing ${itemId} for SKU ${sku}`);
+        }
+      } catch(e) {
+        console.error(`End listing error for ${itemId}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.error("removeUnsellableFromEbay error:", e.message);
+  }
+}
+
+// ── Run not-for-sale check every 6 hours ─────────────────────────────────────
+setInterval(removeUnsellableFromEbay, 6 * 60 * 60 * 1000);
+// Also run once at startup (after 30s to let server settle)
+setTimeout(removeUnsellableFromEbay, 30 * 1000);
+
 // ── Manual sync endpoint (hit from dashboard) ────────────────────────────────
 app.post("/api/sync-orders", auth, async (req, res) => {
   try {
     await syncLatestEbayOrders();
     res.json({ success: true, message: "Sync complete" });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Manual not-for-sale check (hit from dashboard) ───────────────────────────
+app.post("/api/sync-sellability", auth, async (req, res) => {
+  try {
+    await removeUnsellableFromEbay();
+    res.json({ success: true, message: "Sellability check complete" });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
