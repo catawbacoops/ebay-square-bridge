@@ -532,7 +532,7 @@
       const listBtnClass = isListed ? 'list-btn listed' : 'list-btn unlisted';
       const listBtnText = isListed ? '\u2713 Listed on eBay' : 'List on eBay';
       const listBtn = '<button class="' + listBtnClass + '" onclick="openModal(' + JSON.stringify(p).replace(/"/g, '&quot;') + ')">' + listBtnText + '</button>';
-      const removeBtn = isListed ? '<button class="remove-btn" onclick="removeListing(\''  + itemId + '\', \'' + p.sku + '\')">Remove</button>' : '';
+
       const syncBtn = hasMismatch ? '<button class="sync-price-btn" onclick="syncPrice(\''  + itemId + '\', ' + targetPrice + ', \'' + p.sku + '\')">\u21bb Sync $' + targetPrice.toFixed(2) + '</button>' : '';
 
       // Price cell — show mismatch warning if needed
@@ -551,7 +551,7 @@
         '<td><div class="prod-sku">' + (p.sku ? esc(p.sku) : '—') + '</div></td>' +
         '<td class="price-sq">' + (p.squarePrice > 0 ? '$' + p.squarePrice.toFixed(2) : '—') + '</td>' +
         priceCell +
-        '<td class="action-cell">' + listBtn + syncBtn + removeBtn + '</td>' +
+        '<td class="action-cell">' + listBtn + syncBtn + '</td>' +
         '</tr>';
     });
     document.getElementById('search-results').innerHTML =
@@ -603,7 +603,8 @@
       const data = await res.json();
       if (data.error) { showToast('Error: ' + data.error, true); return; }
       showToast('Listing removed from eBay');
-      refreshSkuStatus();
+      loadEbayListings(currentListingPage);
+      if (lastSearchItems.length) refreshSkuStatus();
     } catch(e) {
       showToast('Error: ' + e.message, true);
     }
@@ -803,12 +804,13 @@
     el.innerHTML = '<table class="listings-table"><thead><tr><th>Title</th><th>SKU</th><th>Price</th><th>Qty</th><th></th></tr></thead><tbody>' +
       listings.map(l => {
         const isDupe = l.sku && skuCount[l.sku] > 1;
+        const removeBtn = '<button class="remove-btn" onclick="removeListing(\'' + l.itemId + '\', \'' + (l.sku||'') + '\')">Remove</button>';
         return '<tr' + (isDupe ? ' style="background:#fff8e6;"' : '') + '>' +
           '<td>' + esc(l.title.substring(0, 50)) + (isDupe ? '<span class="duplicate-badge">DUPLICATE</span>' : '') + '</td>' +
           '<td style="color:#aaa;font-size:12px;">' + esc(l.sku || '—') + '</td>' +
           '<td style="color:#1a6e3c;font-weight:600;">$' + l.price.toFixed(2) + '</td>' +
           '<td>' + l.quantity + '</td>' +
-          '<td><a href="' + l.url + '" target="_blank" style="color:#E53238;font-size:12px;text-decoration:none;">View →</a></td>' +
+          '<td style="display:flex;gap:6px;align-items:center;"><a href="' + l.url + '" target="_blank" style="color:#E53238;font-size:12px;text-decoration:none;">View →</a>' + removeBtn + '</td>' +
         '</tr>';
       }).join('') +
       '</tbody></table>';
