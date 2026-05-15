@@ -300,19 +300,16 @@ app.post("/api/ebay/list", auth, async (req, res) => {
       .up()
     .up();
 
+  // Business policy IDs (set in Render env vars)
+  const shippingPolicyId  = process.env.EBAY_SHIPPING_POLICY_ID;
+  const returnPolicyId    = process.env.EBAY_RETURN_POLICY_ID;
+  const paymentPolicyId   = process.env.EBAY_PAYMENT_POLICY_ID;
+
+  if (!shippingPolicyId || !returnPolicyId || !paymentPolicyId) {
+    return res.status(400).json({ error: "Missing eBay business policy IDs. Set EBAY_SHIPPING_POLICY_ID, EBAY_RETURN_POLICY_ID, and EBAY_PAYMENT_POLICY_ID in Render environment variables." });
+  }
+
   const xml = itemNode
-        .ele("ShippingDetails")
-          .ele("ShippingType").txt("Calculated").up()
-          .ele("ShippingServiceOptions")
-            .ele("ShippingServicePriority").txt("1").up()
-            .ele("ShippingService").txt("UPSGround").up()
-          .up()
-          .ele("ShipToLocations").txt("US").up()
-          .ele("CalculatedShippingRate")
-            .ele("PackagingHandlingCosts").txt("0.00").up()
-            .ele("OriginatingPostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
-          .up()
-        .up()
         .ele("ShippingPackageDetails")
           .ele("MeasurementUnit").txt("English").up()
           .ele("WeightMajor").txt(String(weightPounds)).up()
@@ -320,15 +317,18 @@ app.post("/api/ebay/list", auth, async (req, res) => {
           .ele("ShippingPackage").txt("ExtraLargePack").up()
           .ele("ShippingIrregular").txt("true").up()
         .up()
-        .ele("ReturnPolicy")
-          .ele("ReturnsAcceptedOption").txt("ReturnsAccepted").up()
-          .ele("RefundOption").txt("MoneyBack").up()
-          .ele("ReturnsWithinOption").txt("Days_30").up()
-          .ele("ShippingCostPaidByOption").txt("Buyer").up()
+        .ele("SellerProfiles")
+          .ele("SellerShippingProfile")
+            .ele("ShippingProfileID").txt(shippingPolicyId).up()
+          .up()
+          .ele("SellerReturnProfile")
+            .ele("ReturnProfileID").txt(returnPolicyId).up()
+          .up()
+          .ele("SellerPaymentProfile")
+            .ele("PaymentProfileID").txt(paymentPolicyId).up()
+          .up()
         .up()
-        .ele("PaymentMethods").txt("PayPal").up()
-        .ele("PayPalEmailAddress").txt(PAYPAL_EMAIL).up()
-        .ele("Location").txt(process.env.SHIP_FROM_CITY || "Myerstown, PA").up()
+        .ele("Location").txt("Wake Forest, NC").up()
         .ele("PostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
         .ele("Site").txt("US").up()
       .up()
@@ -833,7 +833,7 @@ Return ONLY valid JSON, no markdown, no explanation.`;
     // Build the branded HTML template
     const weightDisplay = weight ? weight + " lb" : "—";
     const imgTag = imageUrl
-      ? `<img src="${imageUrl}" alt="${name}" style="width:100%;border-radius:6px;border:0.5px solid #d4c4a0;display:block;" onerror="this.style.background='#f9f6ef';this.style.minHeight='140px'" />`
+      ? `<img src="${imageUrl}" alt="${name}" style="width:100%;border-radius:6px;border:0.5px solid #d4c4a0;display:block;" />`
       : `<div style="width:100%;min-height:140px;background:#f9f6ef;border-radius:6px;border:0.5px solid #d4c4a0;"></div>`;
 
     const ingredientsSection = ingredients
@@ -893,6 +893,54 @@ Return ONLY valid JSON, no markdown, no explanation.`;
 
     res.json({ html, about, ingredients });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── eBay: fetch business policy IDs ─────────────────────────────────────────
+app.get("/api/ebay/policies", auth, async (req, res) => {
+  try {
+    const results = {};
+    for (const [type, call] of [
+      ["shipping",  "GetShippingDiscountProfiles"],
+      ["return",    "GetUserPreferences"],
+      ["payment",   "GetPaymentPreferences"],
+    ]) {
+      // Use eBay Fulfillment, Return, and Payment Policy APIs
+    }
+
+    // Use seller profiles API
+    const xml = create({ version: "1.0", encoding: "utf-8" })
+      .ele("GetSellerProfilesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+        .ele("RequesterCredentials")
+          .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+        .up()
+        .ele("ProfileType").txt("SHIPPING").up()
+        .ele("ProfileType").txt("RETURN_POLICY").up()
+        .ele("ProfileType").txt("PAYMENT").up()
+      .up()
+      .end({ prettyPrint: false });
+
+    const ebayRes = await fetch(EBAY_API_URL, {
+      method: "POST",
+      headers: ebayHeaders("GetSellerProfiles"),
+      body: xml,
+    });
+    const parsed = await parseXml(await ebayRes.text());
+    const resp = parsed?.GetSellerProfilesResponse;
+
+    const shipping = [].concat(resp?.ShippingProfileList?.ShippingProfile || []).map(p => ({ id: p.ShippingProfileID, name: p.ShippingProfileName }));
+    const returns  = [].concat(resp?.ReturnPolicyProfileList?.ReturnPolicyProfile || []).map(p => ({ id: p.ReturnPolicyProfileID, name: p.ReturnPolicyProfileName }));
+    const payment  = [].concat(resp?.PaymentProfileList?.PaymentProfile || []).map(p => ({ id: p.PaymentProfileID, name: p.PaymentProfileName }));
+
+    res.json({ shipping, returns, payment,
+      env: {
+        EBAY_SHIPPING_POLICY_ID: process.env.EBAY_SHIPPING_POLICY_ID || null,
+        EBAY_RETURN_POLICY_ID:   process.env.EBAY_RETURN_POLICY_ID   || null,
+        EBAY_PAYMENT_POLICY_ID:  process.env.EBAY_PAYMENT_POLICY_ID  || null,
+      }
+    });
+  } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
