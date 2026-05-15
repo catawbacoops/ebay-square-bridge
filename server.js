@@ -886,7 +886,7 @@ Return ONLY valid JSON, no markdown, no explanation.`;
     </div>
   </div>
   <div style="background:#9b804a;padding:13px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-    <span style="color:#f2ede3;font-size:12px;font-family:sans-serif;">The Grain Mill Co-op &middot; 230 S Main St, Wake Forest, NC 27587</span>
+    <span style="color:#f2ede3;font-size:12px;font-family:sans-serif;">The Grain Mill Co-op · 230 S Main St, Wake Forest, NC 27587</span>
     <span style="color:#d4c4a0;font-size:12px;font-family:sans-serif;">Bulk grains, flours &amp; baking supplies</span>
   </div>
 </div>`;
