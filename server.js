@@ -38,6 +38,7 @@ const EBAY_API_URL = EBAY_ENV === "sandbox"
   : "https://api.ebay.com/ws/api.dll";
 
 const MARKUP = parseFloat(process.env.MARKUP_PERCENT || "10") / 100;
+const LOGO_URL = "https://www.grainmill.coop/uploads/b/ee7bbb4445cd029653d297c0f017675bcd272f2f5d280a31073c8a04e963b02e/logo_1775436651.png";
 const PAYPAL_EMAIL = process.env.PAYPAL_EMAIL || "";
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "changeme";
 
