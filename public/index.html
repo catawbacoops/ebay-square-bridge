@@ -9,24 +9,24 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f4f4f2;
-      color: #1a1a1a;
+      background: #1a1a1f;
+      color: #e8e8f0;
       min-height: 100vh;
     }
 
     /* ── Login ── */
     #login-screen {
       display: flex; align-items: center; justify-content: center;
-      min-height: 100vh; background: #f4f4f2;
+      min-height: 100vh; background: #1a1a1f;
     }
     .login-box {
-      background: #fff; border-radius: 12px; padding: 36px 32px;
+      background: #24242c; border-radius: 12px; padding: 36px 32px;
       width: 340px; box-shadow: 0 2px 16px rgba(0,0,0,0.08);
     }
     .login-box h1 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
-    .login-box p { font-size: 13px; color: #888; margin-bottom: 24px; }
+    .login-box p { font-size: 13px; color: #6e6e82; margin-bottom: 24px; }
     .login-box input {
-      width: 100%; padding: 10px 12px; border: 1.5px solid #ddd;
+      width: 100%; padding: 10px 12px; border: 1.5px solid #35353f;
       border-radius: 8px; font-size: 14px; margin-bottom: 12px; outline: none;
     }
     .login-box input:focus { border-color: #E53238; }
@@ -42,7 +42,7 @@
     #app { display: none; }
 
     header {
-      background: #fff; border-bottom: 1px solid #e5e5e5;
+      background: #24242c; border-bottom: 1px solid #35353f;
       padding: 0 24px; height: 56px;
       display: flex; align-items: center; justify-content: space-between;
     }
@@ -55,9 +55,9 @@
     .header-actions { display: flex; gap: 10px; align-items: center; }
     .sync-btn {
       font-size: 13px; padding: 6px 14px; border-radius: 6px;
-      border: 1.5px solid #ddd; background: #fff; cursor: pointer; font-weight: 500;
+      border: 1.5px solid #35353f; background: #24242c; cursor: pointer; font-weight: 500;
     }
-    .sync-btn:hover { background: #f5f5f5; }
+    .sync-btn:hover { background: #2a2a32; }
     .sync-btn.loading { opacity: 0.6; pointer-events: none; }
 
     main { max-width: 960px; margin: 0 auto; padding: 28px 24px; }
@@ -65,27 +65,27 @@
     /* ── Stats bar ── */
     .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
     .stat-card {
-      background: #fff; border-radius: 10px; padding: 14px 16px;
-      border: 1px solid #e5e5e5;
+      background: #24242c; border-radius: 10px; padding: 14px 16px;
+      border: 1px solid #35353f;
     }
-    .stat-card p:first-child { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-    .stat-card p:last-child { font-size: 22px; font-weight: 600; color: #1a1a1a; }
+    .stat-card p:first-child { font-size: 11px; color: #6e6e82; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .stat-card p:last-child { font-size: 22px; font-weight: 600; color: #e8e8f0; }
 
     /* ── Search panel ── */
-    .panel { background: #fff; border-radius: 10px; border: 1px solid #e5e5e5; margin-bottom: 20px; overflow: hidden; }
-    .panel-header { padding: 14px 18px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; }
+    .panel { background: #24242c; border-radius: 10px; border: 1px solid #35353f; margin-bottom: 20px; overflow: hidden; }
+    .panel-header { padding: 14px 18px; border-bottom: 1px solid #2e2e38; display: flex; align-items: center; justify-content: space-between; }
     .panel-header h2 { font-size: 14px; font-weight: 600; }
     .panel-body { padding: 16px 18px; }
 
     .search-row { display: flex; gap: 10px; margin-bottom: 14px; }
     .search-row input {
-      flex: 1; padding: 9px 12px; border: 1.5px solid #ddd;
+      flex: 1; padding: 9px 12px; border: 1.5px solid #35353f;
       border-radius: 8px; font-size: 14px; outline: none;
     }
     .search-row input:focus { border-color: #E53238; }
-    .markup-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #555; }
+    .markup-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #a0a0b0; }
     .markup-row input {
-      width: 64px; padding: 6px 8px; border: 1.5px solid #ddd;
+      width: 64px; padding: 6px 8px; border: 1.5px solid #35353f;
       border-radius: 6px; font-size: 14px; text-align: center; outline: none;
     }
     .markup-row input:focus { border-color: #E53238; }
@@ -93,17 +93,17 @@
     /* product results table */
     .prod-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .prod-table th {
-      text-align: left; font-size: 11px; font-weight: 600; color: #888;
+      text-align: left; font-size: 11px; font-weight: 600; color: #6e6e82;
       text-transform: uppercase; letter-spacing: 0.05em;
-      padding: 8px 10px; border-bottom: 1px solid #f0f0f0;
+      padding: 8px 10px; border-bottom: 1px solid #2e2e38;
     }
-    .prod-table td { padding: 10px 10px; border-bottom: 1px solid #f8f8f8; vertical-align: middle; }
+    .prod-table td { padding: 10px 10px; border-bottom: 1px solid #2a2a32; vertical-align: middle; }
     .prod-table tr:last-child td { border-bottom: none; }
-    .prod-table tr:hover td { background: #fafafa; }
-    .prod-name { font-weight: 500; color: #111; max-width: 280px; }
-    .prod-sku { color: #aaa; font-size: 12px; }
-    .price-sq { color: #888; }
-    .price-eb { color: #1a6e3c; font-weight: 600; }
+    .prod-table tr:hover td { background: #22222a; }
+    .prod-name { font-weight: 500; color: #e8e8f0; max-width: 280px; }
+    .prod-sku { color: #555566; font-size: 12px; }
+    .price-sq { color: #6e6e82; }
+    .price-eb { color: #3ecf8e; font-weight: 600; }
 
     .list-btn {
       padding: 6px 14px; color: #fff;
@@ -114,44 +114,44 @@
     .list-btn.unlisted:hover { background: #178a63; }
     .list-btn.listed { background: #E53238; }
     .list-btn.listed:hover { background: #c42b30; }
-    .list-btn:disabled { background: #ccc; cursor: not-allowed; }
+    .list-btn:disabled { background: #333; cursor: not-allowed; }
     .remove-btn {
-      padding: 6px 12px; background: #fff; color: #E53238;
+      padding: 6px 12px; background: #24242c; color: #E53238;
       border: 1.5px solid #E53238; border-radius: 6px; font-size: 12px; font-weight: 500;
       cursor: pointer; white-space: nowrap;
     }
-    .remove-btn:hover { background: #fff0f0; }
+    .remove-btn:hover { background: #2d1f1f; }
     .sync-price-btn {
-      padding: 6px 12px; background: #fff3cd; color: #856404;
-      border: 1.5px solid #ffc107; border-radius: 6px; font-size: 12px; font-weight: 600;
+      padding: 6px 12px; background: #2d2510; color: #d4a017;
+      border: 1.5px solid #c49a00; border-radius: 6px; font-size: 12px; font-weight: 600;
       cursor: pointer; white-space: nowrap;
     }
-    .sync-price-btn:hover { background: #ffe8a1; }
+    .sync-price-btn:hover { background: #3a3010; }
     .sync-price-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .row-mismatch { background: #fffbf0; }
-    .row-mismatch:hover { background: #fff5d6 !important; }
-    .price-mismatch { color: #856404; font-weight: 600; font-size: 12px; }
+    .row-mismatch { background: #222015; }
+    .row-mismatch:hover { background: #2a2510 !important; }
+    .price-mismatch { color: #d4a017; font-weight: 600; font-size: 12px; }
     .action-cell { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     .sort-row { display: flex; align-items: center; gap: 6px; padding: 8px 0 12px; flex-wrap: wrap; }
-    .sort-label { font-size: 12px; color: #888; font-weight: 500; margin-right: 2px; }
+    .sort-label { font-size: 12px; color: #6e6e82; font-weight: 500; margin-right: 2px; }
     .sort-btn {
-      padding: 4px 12px; background: #f5f5f5; color: #555;
-      border: 1.5px solid #ddd; border-radius: 20px; font-size: 12px; font-weight: 500;
+      padding: 4px 12px; background: #2a2a32; color: #a0a0b0;
+      border: 1.5px solid #35353f; border-radius: 20px; font-size: 12px; font-weight: 500;
       cursor: pointer; transition: all 0.15s;
     }
-    .sort-btn:hover { background: #eee; border-color: #bbb; }
+    .sort-btn:hover { background: #eee; border-color: #a0a0b0; }
     .sort-btn.active { background: #E53238; color: #fff; border-color: #E53238; }
     .sort-dir-btn {
-      padding: 4px 10px; background: #f5f5f5; color: #555;
-      border: 1.5px solid #ddd; border-radius: 20px; font-size: 13px; font-weight: 700;
+      padding: 4px 10px; background: #2a2a32; color: #a0a0b0;
+      border: 1.5px solid #35353f; border-radius: 20px; font-size: 13px; font-weight: 700;
       cursor: pointer; margin-left: 4px;
     }
-    .sort-dir-btn:hover { background: #eee; }
+    .sort-dir-btn:hover { background: #333340; }
     th.sortable { cursor: pointer; user-select: none; }
     th.sortable:hover { color: #E53238; }
     th.sort-active { color: #E53238; }
 
-    .empty-state { text-align: center; padding: 32px; color: #aaa; font-size: 14px; }
+    .empty-state { text-align: center; padding: 32px; color: #555566; font-size: 14px; }
 
     /* ── List modal ── */
     .modal-overlay {
@@ -161,14 +161,14 @@
     }
     .modal-overlay.open { display: flex; }
     .modal {
-      background: #fff; border-radius: 12px; padding: 28px;
+      background: #24242c; border-radius: 12px; padding: 28px;
       width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto;
     }
     .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 18px; }
     .form-row { margin-bottom: 14px; }
-    .form-row label { display: block; font-size: 12px; font-weight: 500; color: #555; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .form-row label { display: block; font-size: 12px; font-weight: 500; color: #a0a0b0; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
     .form-row input, .form-row textarea, .form-row select {
-      width: 100%; padding: 9px 12px; border: 1.5px solid #ddd;
+      width: 100%; padding: 9px 12px; border: 1.5px solid #35353f;
       border-radius: 8px; font-size: 14px; outline: none; font-family: inherit;
     }
     .form-row input:focus, .form-row textarea:focus, .form-row select:focus { border-color: #E53238; }
@@ -180,19 +180,19 @@
       border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
     }
     .btn-primary:hover { background: #c42b30; }
-    .btn-primary:disabled { background: #f0a0a2; cursor: not-allowed; }
+    .btn-primary:disabled { background: #6b1f22; cursor: not-allowed; }
     .btn-cancel {
-      padding: 11px 20px; background: #fff; color: #555;
-      border: 1.5px solid #ddd; border-radius: 8px; font-size: 14px; cursor: pointer;
+      padding: 11px 20px; background: #24242c; color: #a0a0b0;
+      border: 1.5px solid #35353f; border-radius: 8px; font-size: 14px; cursor: pointer;
     }
-    .btn-cancel:hover { background: #f5f5f5; }
+    .btn-cancel:hover { background: #2a2a32; }
 
     /* ── Recent listings table ── */
-    .listing-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+    .listing-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #2e2e38; font-size: 13px; }
     .listing-row:last-child { border-bottom: none; }
     .listing-name { flex: 1; font-weight: 500; }
-    .listing-price { color: #1a6e3c; font-weight: 600; min-width: 60px; }
-    .listing-id { color: #aaa; font-size: 12px; }
+    .listing-price { color: #3ecf8e; font-weight: 600; min-width: 60px; }
+    .listing-id { color: #555566; font-size: 12px; }
     .listing-link { color: #E53238; font-size: 12px; text-decoration: none; }
     .listing-link:hover { text-decoration: underline; }
 
@@ -212,14 +212,14 @@
     .dot-green { background: #1D9E75; }
     .dot-red { background: #E53238; }
     .listings-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .listings-table th { text-align: left; font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
-    .listings-table td { padding: 9px 8px; border-bottom: 1px solid #f8f8f8; vertical-align: middle; }
+    .listings-table th { text-align: left; font-size: 11px; font-weight: 600; color: #6e6e82; text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 8px; border-bottom: 1px solid #2e2e38; }
+    .listings-table td { padding: 9px 8px; border-bottom: 1px solid #2a2a32; vertical-align: middle; }
     .listings-table tr:last-child td { border-bottom: none; }
-    .listings-table tr:hover td { background: #fafafa; }
+    .listings-table tr:hover td { background: #22222a; }
     .duplicate-badge { font-size: 11px; background: #f59e0b; color: #fff; padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: 500; }
-    .page-btn { padding: 5px 12px; border: 1.5px solid #ddd; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .page-btn { padding: 5px 12px; border: 1.5px solid #35353f; background: #24242c; border-radius: 6px; cursor: pointer; font-size: 13px; }
     .page-btn.active { background: #E53238; color: #fff; border-color: #E53238; }
-    .page-btn:hover:not(.active) { background: #f5f5f5; }
+    .page-btn:hover:not(.active) { background: #2a2a32; }
     .relist-btn {
       padding: 6px 12px; background: #1D9E75; color: #fff;
       border: none; border-radius: 6px; font-size: 12px; font-weight: 500;
@@ -231,20 +231,20 @@
       font-size: 11px; background: #f59e0b; color: #fff;
       padding: 2px 7px; border-radius: 10px; font-weight: 500;
     }
-    .ended-date { font-size: 11px; color: #aaa; }
+    .ended-date { font-size: 11px; color: #555566; }
 
     /* ── Tabs ── */
     .tab-bar {
       display: flex; gap: 2px; padding: 0 24px;
-      background: #fff; border-bottom: 1px solid #e5e5e5;
+      background: #24242c; border-bottom: 1px solid #35353f;
     }
     .tab-btn {
       padding: 11px 20px; font-size: 13px; font-weight: 500;
-      color: #888; border: none; background: none; cursor: pointer;
+      color: #6e6e82; border: none; background: none; cursor: pointer;
       border-bottom: 2px solid transparent; margin-bottom: -1px;
       transition: color 0.15s; white-space: nowrap;
     }
-    .tab-btn:hover { color: #1a1a1a; }
+    .tab-btn:hover { color: #e8e8f0; }
     .tab-btn.active { color: #E53238; border-bottom-color: #E53238; }
     .tab-badge {
       display: inline-block; background: #f59e0b; color: #fff;
@@ -253,6 +253,15 @@
     }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
+
+    input, textarea, select {
+      background: #1e1e26 !important;
+      color: #e8e8f0 !important;
+      border-color: #35353f !important;
+    }
+    input::placeholder, textarea::placeholder { color: #555566 !important; }
+    input:focus, textarea:focus, select:focus { border-color: #E53238 !important; }
+    option { background: #1e1e26; color: #e8e8f0; }
   </style>
 </head>
 <body>
@@ -279,7 +288,7 @@
       <button class="sync-btn" onclick="syncOrders()" id="sync-btn">↻ Sync eBay Orders</button>
       <button class="sync-btn" onclick="syncSellability()" id="sellability-btn">✕ Remove Unsellable</button>
       <button class="sync-btn" onclick="syncRelist()" id="relist-check-btn">↺ Check Relist</button>
-      <span style="font-size:13px;color:#888;">
+      <span style="font-size:13px;color:#6e6e82;">
         <span class="status-dot dot-green" id="sq-dot"></span>Square
         &nbsp;
         <span class="status-dot dot-green" id="eb-dot"></span>eBay
@@ -335,7 +344,7 @@
       <div class="panel-header">
         <h2>Active eBay Listings</h2>
         <div style="display:flex;align-items:center;gap:10px;">
-          <span id="listing-count" style="font-size:13px;color:#888;"></span>
+          <span id="listing-count" style="font-size:13px;color:#6e6e82;"></span>
           <button class="sync-btn" onclick="loadEbayListings()" id="refresh-listings-btn">↻ Refresh</button>
         </div>
       </div>
@@ -346,7 +355,7 @@
           <button class="sort-btn active" data-lsort="sku" onclick="setListingSort('sku')">SKU</button>
           <button class="sort-dir-btn" id="listing-sort-dir" onclick="toggleListingSortDir()" title="Toggle direction">↑</button>
         </div>
-        <input type="text" id="listing-search" placeholder="Filter listings…" oninput="filterListings()" style="width:100%;margin-bottom:12px;font-size:13px;padding:7px 10px;border:1.5px solid #ddd;border-radius:7px;outline:none;" />
+        <input type="text" id="listing-search" placeholder="Filter listings…" oninput="filterListings()" style="width:100%;margin-bottom:12px;font-size:13px;padding:7px 10px;border:1.5px solid #35353f;border-radius:7px;outline:none;background:#1e1e26;color:#e8e8f0;" />
         <div id="ebay-listings"><div class="empty-state">Loading your eBay listings…</div></div>
         <div id="listing-pages" style="display:flex;gap:8px;margin-top:12px;justify-content:center;"></div>
       </div>
@@ -371,7 +380,7 @@
           <button class="sort-btn" data-esort="sku" onclick="setEndedSort('sku')">SKU</button>
           <button class="sort-dir-btn" id="ended-sort-dir" onclick="toggleEndedSortDir()">↓</button>
         </div>
-        <input type="text" id="ended-search" placeholder="Filter ended listings…" oninput="filterEndedListings()" style="width:100%;margin-bottom:12px;font-size:13px;padding:7px 10px;border:1.5px solid #ddd;border-radius:7px;outline:none;" />
+        <input type="text" id="ended-search" placeholder="Filter ended listings…" oninput="filterEndedListings()" style="width:100%;margin-bottom:12px;font-size:13px;padding:7px 10px;border:1.5px solid #35353f;border-radius:7px;outline:none;background:#1e1e26;color:#e8e8f0;" />
         <div id="ended-listings"><div class="empty-state">Loading…</div></div>
       </div>
     </div>
@@ -395,17 +404,17 @@
     <div class="form-row">
       <label>Title (max 80 chars)</label>
       <input type="text" id="m-title" maxlength="80" />
-      <div style="font-size:11px;color:#aaa;margin-top:3px;" id="m-title-count">0/80</div>
+      <div style="font-size:11px;color:#555566;margin-top:3px;" id="m-title-count">0/80</div>
     </div>
     <div class="form-row">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
         <label style="margin-bottom:0;">Description</label>
-        <div style="display:flex;gap:0;border:1px solid #ddd;border-radius:6px;overflow:hidden;">
+        <div style="display:flex;gap:0;border:1px solid #35353f;border-radius:6px;overflow:hidden;">
           <button id="desc-tab-preview" onclick="setDescTab('preview')" style="padding:3px 10px;font-size:11px;background:#E53238;color:#fff;border:none;cursor:pointer;">Preview</button>
-          <button id="desc-tab-edit" onclick="setDescTab('edit')" style="padding:3px 10px;font-size:11px;background:#f5f5f5;color:#555;border:none;cursor:pointer;">Edit HTML</button>
+          <button id="desc-tab-edit" onclick="setDescTab('edit')" style="padding:3px 10px;font-size:11px;background:#2a2a32;color:#a0a0b0;border:none;cursor:pointer;">Edit HTML</button>
         </div>
       </div>
-      <div id="desc-preview-wrap" style="border:1px solid #ddd;border-radius:6px;overflow:auto;max-height:340px;background:#f2ede3;padding:12px;">
+      <div id="desc-preview-wrap" style="border:1px solid #35353f;border-radius:6px;overflow:auto;max-height:340px;background:#f2ede3;padding:12px;">
         <div id="desc-preview-inner" style="pointer-events:none;transform:scale(0.7);transform-origin:top left;width:143%;"></div>
       </div>
       <textarea id="m-desc" style="display:none;height:180px;font-size:11px;font-family:monospace;"></textarea>
@@ -461,12 +470,12 @@
       <label>Package Dimensions (inches) L × W × H</label>
       <div style="display:flex;gap:8px;align-items:center;">
         <input type="number" id="m-depth" step="1" min="1" placeholder="L" style="width:70px;" />
-        <span style="color:#aaa;">×</span>
+        <span style="color:#555566;">×</span>
         <input type="number" id="m-width" step="1" min="1" placeholder="W" style="width:70px;" />
-        <span style="color:#aaa;">×</span>
+        <span style="color:#555566;">×</span>
         <input type="number" id="m-height" step="1" min="1" placeholder="H" style="width:70px;" />
       </div>
-      <div style="font-size:11px;color:#aaa;margin-top:3px;">Required by UPS for packages over 3 cubic feet</div>
+      <div style="font-size:11px;color:#555566;margin-top:3px;">Required by UPS for packages over 3 cubic feet</div>
     </div>
 
     <div style="font-size:12px;color:#888;margin-top:4px;">
@@ -725,7 +734,7 @@
     document.getElementById('m-type').value = '';
     document.getElementById('m-weight').value = (product.weight && product.weight > 0) ? product.weight : '';
     document.getElementById('m-desc').value = '';
-    document.getElementById('desc-preview-inner').innerHTML = '<div style="color:#aaa;font-size:12px;text-align:center;padding:20px;">Generating description…</div>';
+    document.getElementById('desc-preview-inner').innerHTML = '<div style="color:#555566;font-size:12px;text-align:center;padding:20px;">Generating description…</div>';
     document.getElementById('desc-gen-status').textContent = '';
     setDescTab('preview');
     document.getElementById('modal-err').textContent = '';
@@ -989,10 +998,10 @@
       listings.map(l => {
         const isDupe = l.sku && skuCount[l.sku] > 1;
         const removeBtn = '<button class="remove-btn" onclick="removeListing(\'' + l.itemId + '\', \'' + (l.sku||'') + '\')">Remove</button>';
-        return '<tr' + (isDupe ? ' style="background:#fff8e6;"' : '') + '>' +
+        return '<tr' + (isDupe ? ' style="background:#24242c8e6;"' : '') + '>' +
           '<td>' + esc(l.title.substring(0, 50)) + (isDupe ? '<span class="duplicate-badge">DUPLICATE</span>' : '') + '</td>' +
-          '<td style="color:#aaa;font-size:12px;">' + esc(l.sku || '—') + '</td>' +
-          '<td style="color:#1a6e3c;font-weight:600;">$' + l.price.toFixed(2) + '</td>' +
+          '<td style="color:#555566;font-size:12px;">' + esc(l.sku || '—') + '</td>' +
+          '<td style="color:#3ecf8e;font-weight:600;">$' + l.price.toFixed(2) + '</td>' +
           '<td>' + l.quantity + '</td>' +
           '<td style="display:flex;gap:6px;align-items:center;"><a href="' + l.url + '" target="_blank" style="color:#E53238;font-size:12px;text-decoration:none;">View →</a>' + removeBtn + '</td>' +
         '</tr>';
@@ -1133,9 +1142,9 @@
         return '<tr>' +
           '<td class="ended-date">' + endedDate + '</td>' +
           '<td style="font-weight:500;max-width:280px;">' + esc((l.title || '').substring(0, 55)) + '</td>' +
-          '<td style="color:#aaa;font-size:12px;">' + esc(l.sku || '—') + '</td>' +
-          '<td style="color:#1a6e3c;font-weight:600;">$' + (l.ebayPrice || 0).toFixed(2) + '</td>' +
-          '<td style="color:#888;font-size:12px;">' + weight + '</td>' +
+          '<td style="color:#555566;font-size:12px;">' + esc(l.sku || '—') + '</td>' +
+          '<td style="color:#3ecf8e;font-weight:600;">$' + (l.ebayPrice || 0).toFixed(2) + '</td>' +
+          '<td style="color:#6e6e82;font-size:12px;">' + weight + '</td>' +
           '<td>' + relistBtn + '</td>' +
         '</tr>';
       }).join('') +
