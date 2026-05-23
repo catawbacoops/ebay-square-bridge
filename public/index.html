@@ -232,6 +232,27 @@
       padding: 2px 7px; border-radius: 10px; font-weight: 500;
     }
     .ended-date { font-size: 11px; color: #aaa; }
+
+    /* ── Tabs ── */
+    .tab-bar {
+      display: flex; gap: 2px; padding: 0 24px;
+      background: #fff; border-bottom: 1px solid #e5e5e5;
+    }
+    .tab-btn {
+      padding: 11px 20px; font-size: 13px; font-weight: 500;
+      color: #888; border: none; background: none; cursor: pointer;
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+      transition: color 0.15s; white-space: nowrap;
+    }
+    .tab-btn:hover { color: #1a1a1a; }
+    .tab-btn.active { color: #E53238; border-bottom-color: #E53238; }
+    .tab-badge {
+      display: inline-block; background: #f59e0b; color: #fff;
+      font-size: 10px; font-weight: 700; padding: 1px 5px;
+      border-radius: 8px; margin-left: 5px; vertical-align: middle;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
   </style>
 </head>
 <body>
@@ -266,6 +287,13 @@
     </div>
   </header>
 
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('search')">Search &amp; List</button>
+    <button class="tab-btn" onclick="switchTab('active')" id="tab-active-btn">Active Listings</button>
+    <button class="tab-btn" onclick="switchTab('ended')" id="tab-ended-btn">Ended Listings</button>
+  </div>
+
   <main>
     <div class="stats">
       <div class="stat-card"><p>Listed Today</p><p id="stat-listed">—</p></div>
@@ -274,6 +302,7 @@
     </div>
 
     <!-- Search & List -->
+    <div class="tab-panel active" id="tab-search">
     <div class="panel">
       <div class="panel-header">
         <h2>Search Square Catalog &amp; List on eBay</h2>
@@ -298,8 +327,10 @@
         </div>
       </div>
     </div>
+    </div><!-- /tab-search -->
 
     <!-- Active eBay listings -->
+    <div class="tab-panel" id="tab-active">
     <div class="panel">
       <div class="panel-header">
         <h2>Active eBay Listings</h2>
@@ -320,10 +351,13 @@
         <div id="listing-pages" style="display:flex;gap:8px;margin-top:12px;justify-content:center;"></div>
       </div>
     </div>
+    </div><!-- /tab-active -->
+
     <!-- Ended Listings (awaiting relist) -->
+    <div class="tab-panel" id="tab-ended">
     <div class="panel">
       <div class="panel-header">
-        <h2>Ended Listings <span class="ended-badge" id="ended-badge" style="display:none;"></span></h2>
+        <h2>Ended Listings</h2>
         <div style="display:flex;align-items:center;gap:10px;">
           <span style="font-size:12px;color:#888;">Items ended due to sellable=N · auto-relisted when back in stock</span>
           <button class="sync-btn" onclick="loadEndedListings()" id="refresh-ended-btn">↻ Refresh</button>
@@ -341,6 +375,7 @@
         <div id="ended-listings"><div class="empty-state">Loading…</div></div>
       </div>
     </div>
+    </div><!-- /tab-ended -->
   </main>
 </div>
 
@@ -462,6 +497,17 @@
   let allEndedListings = [];
   let endedSort = 'endedAt';
   let endedSortAsc = false;
+
+  // ── Tabs ──────────────────────────────────────────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    // Find matching tab button by its onclick
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      if (b.getAttribute('onclick') === "switchTab('" + name + "')") b.classList.add('active');
+    });
+  }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   function doLogin() {
@@ -888,6 +934,7 @@
       listedSkus = new Set(allEbayListings.map(l => l.sku).filter(Boolean));
       document.getElementById('listing-count').textContent = data.totalItems + ' active listing' + (data.totalItems !== 1 ? 's' : '');
       document.getElementById('stat-listed').textContent = data.totalItems;
+      document.getElementById('tab-active-btn').innerHTML = 'Active Listings <span class="tab-badge" style="background:#1D9E75;">' + data.totalItems + '</span>';
 
       renderListings(allEbayListings);
       renderPages(data.totalPages, page);
@@ -1017,12 +1064,11 @@
       const data = await res.json();
       if (data.error) { el.innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + esc(data.error) + '</div>'; return; }
       allEndedListings = data || [];
-      const badge = document.getElementById('ended-badge');
+      const btn = document.getElementById('tab-ended-btn');
       if (allEndedListings.length) {
-        badge.textContent = allEndedListings.length;
-        badge.style.display = 'inline';
+        btn.innerHTML = 'Ended Listings <span class="tab-badge">' + allEndedListings.length + '</span>';
       } else {
-        badge.style.display = 'none';
+        btn.textContent = 'Ended Listings';
       }
       renderEndedListings(allEndedListings);
     } catch(e) {
