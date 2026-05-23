@@ -220,6 +220,18 @@
     .page-btn { padding: 5px 12px; border: 1.5px solid #ddd; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
     .page-btn.active { background: #E53238; color: #fff; border-color: #E53238; }
     .page-btn:hover:not(.active) { background: #f5f5f5; }
+    .relist-btn {
+      padding: 6px 12px; background: #1D9E75; color: #fff;
+      border: none; border-radius: 6px; font-size: 12px; font-weight: 500;
+      cursor: pointer; white-space: nowrap;
+    }
+    .relist-btn:hover { background: #178a63; }
+    .relist-btn:disabled { background: #ccc; cursor: not-allowed; }
+    .ended-badge {
+      font-size: 11px; background: #f59e0b; color: #fff;
+      padding: 2px 7px; border-radius: 10px; font-weight: 500;
+    }
+    .ended-date { font-size: 11px; color: #aaa; }
   </style>
 </head>
 <body>
@@ -245,6 +257,7 @@
     <div class="header-actions">
       <button class="sync-btn" onclick="syncOrders()" id="sync-btn">↻ Sync eBay Orders</button>
       <button class="sync-btn" onclick="syncSellability()" id="sellability-btn">✕ Remove Unsellable</button>
+      <button class="sync-btn" onclick="syncRelist()" id="relist-check-btn">↺ Check Relist</button>
       <span style="font-size:13px;color:#888;">
         <span class="status-dot dot-green" id="sq-dot"></span>Square
         &nbsp;
@@ -305,6 +318,27 @@
         <input type="text" id="listing-search" placeholder="Filter listings…" oninput="filterListings()" style="width:100%;margin-bottom:12px;font-size:13px;padding:7px 10px;border:1.5px solid #ddd;border-radius:7px;outline:none;" />
         <div id="ebay-listings"><div class="empty-state">Loading your eBay listings…</div></div>
         <div id="listing-pages" style="display:flex;gap:8px;margin-top:12px;justify-content:center;"></div>
+      </div>
+    </div>
+    <!-- Ended Listings (awaiting relist) -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Ended Listings <span class="ended-badge" id="ended-badge" style="display:none;"></span></h2>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:12px;color:#888;">Items ended due to sellable=N · auto-relisted when back in stock</span>
+          <button class="sync-btn" onclick="loadEndedListings()" id="refresh-ended-btn">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="sort-row" style="margin-bottom:8px;">
+          <span class="sort-label">Sort by:</span>
+          <button class="sort-btn active" data-esort="endedAt" onclick="setEndedSort('endedAt')">Date Ended</button>
+          <button class="sort-btn" data-esort="title" onclick="setEndedSort('title')">Title</button>
+          <button class="sort-btn" data-esort="sku" onclick="setEndedSort('sku')">SKU</button>
+          <button class="sort-dir-btn" id="ended-sort-dir" onclick="toggleEndedSortDir()">↓</button>
+        </div>
+        <input type="text" id="ended-search" placeholder="Filter ended listings…" oninput="filterEndedListings()" style="width:100%;margin-bottom:12px;font-size:13px;padding:7px 10px;border:1.5px solid #ddd;border-radius:7px;outline:none;" />
+        <div id="ended-listings"><div class="empty-state">Loading…</div></div>
       </div>
     </div>
   </main>
@@ -425,6 +459,9 @@
   let listingSortAsc = true;
   let listedSkus = new Set();
   let currentListingPage = 1;
+  let allEndedListings = [];
+  let endedSort = 'endedAt';
+  let endedSortAsc = false;
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   function doLogin() {
@@ -441,6 +478,7 @@
           document.getElementById('login-screen').style.display = 'none';
           document.getElementById('app').style.display = 'block';
           loadEbayListings();
+          loadEndedListings();
         }
       })
       .catch(() => {
@@ -963,6 +1001,146 @@
     }
     btn.classList.remove('loading');
     btn.textContent = '↻ Sync eBay Orders';
+  }
+
+  // ── Ended Listings ────────────────────────────────────────────────────────
+  async function loadEndedListings() {
+    const el = document.getElementById('ended-listings');
+    const btn = document.getElementById('refresh-ended-btn');
+    el.innerHTML = '<div class="empty-state">Loading…</div>';
+    btn.textContent = 'Loading…';
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/ebay/ended-listings', {
+        headers: { 'x-dashboard-password': PASSWORD }
+      });
+      const data = await res.json();
+      if (data.error) { el.innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + esc(data.error) + '</div>'; return; }
+      allEndedListings = data || [];
+      const badge = document.getElementById('ended-badge');
+      if (allEndedListings.length) {
+        badge.textContent = allEndedListings.length;
+        badge.style.display = 'inline';
+      } else {
+        badge.style.display = 'none';
+      }
+      renderEndedListings(allEndedListings);
+    } catch(e) {
+      el.innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + e.message + '</div>';
+    }
+    btn.textContent = '↻ Refresh';
+    btn.disabled = false;
+  }
+
+  function filterEndedListings() {
+    const q = document.getElementById('ended-search').value.toLowerCase();
+    const filtered = q ? allEndedListings.filter(l =>
+      (l.title || '').toLowerCase().includes(q) || (l.sku || '').includes(q)
+    ) : allEndedListings;
+    renderEndedListings(filtered);
+  }
+
+  function sortedEndedListings(listings) {
+    return listings.slice().sort(function(a, b) {
+      let av, bv;
+      if (endedSort === 'endedAt') { av = a.endedAt || ''; bv = b.endedAt || ''; }
+      else if (endedSort === 'title') { av = a.title || ''; bv = b.title || ''; }
+      else { av = a.sku || ''; bv = b.sku || ''; }
+      const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
+      return endedSortAsc ? cmp : -cmp;
+    });
+  }
+
+  function setEndedSort(field) {
+    if (endedSort === field) { endedSortAsc = !endedSortAsc; }
+    else { endedSort = field; endedSortAsc = field !== 'endedAt'; }
+    document.querySelectorAll('[data-esort]').forEach(b => b.classList.toggle('active', b.dataset.esort === field));
+    document.getElementById('ended-sort-dir').textContent = endedSortAsc ? '↑' : '↓';
+    filterEndedListings();
+  }
+
+  function toggleEndedSortDir() {
+    endedSortAsc = !endedSortAsc;
+    document.getElementById('ended-sort-dir').textContent = endedSortAsc ? '↑' : '↓';
+    filterEndedListings();
+  }
+
+  function renderEndedListings(listings) {
+    const el = document.getElementById('ended-listings');
+    if (!listings.length) {
+      el.innerHTML = '<div class="empty-state">No ended listings — items ended due to sellable=N will appear here</div>';
+      return;
+    }
+    listings = sortedEndedListings(listings);
+
+    const thDate  = '<th class="sortable' + (endedSort==='endedAt'?' sort-active':'') + '" onclick="setEndedSort(\'endedAt\')">Date Ended ' + (endedSort==='endedAt'?(endedSortAsc?'↑':'↓'):'') + '</th>';
+    const thTitle = '<th class="sortable' + (endedSort==='title'?' sort-active':'') + '" onclick="setEndedSort(\'title\')">Title ' + (endedSort==='title'?(endedSortAsc?'↑':'↓'):'') + '</th>';
+    const thSku   = '<th class="sortable' + (endedSort==='sku'?' sort-active':'') + '" onclick="setEndedSort(\'sku\')">SKU ' + (endedSort==='sku'?(endedSortAsc?'↑':'↓'):'') + '</th>';
+
+    el.innerHTML = '<table class="listings-table"><thead><tr>' +
+      thDate + thTitle + thSku + '<th>Price</th><th>Weight</th><th></th>' +
+      '</tr></thead><tbody>' +
+      listings.map(function(l) {
+        const endedDate = l.endedAt ? new Date(l.endedAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
+        const relistBtn = '<button class="relist-btn" onclick="relistItem(\'' + esc(l.sku) + '\', this)">↺ Relist</button>';
+        const weight = l.weightLbs ? l.weightLbs + ' lb' : '—';
+        return '<tr>' +
+          '<td class="ended-date">' + endedDate + '</td>' +
+          '<td style="font-weight:500;max-width:280px;">' + esc((l.title || '').substring(0, 55)) + '</td>' +
+          '<td style="color:#aaa;font-size:12px;">' + esc(l.sku || '—') + '</td>' +
+          '<td style="color:#1a6e3c;font-weight:600;">$' + (l.ebayPrice || 0).toFixed(2) + '</td>' +
+          '<td style="color:#888;font-size:12px;">' + weight + '</td>' +
+          '<td>' + relistBtn + '</td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody></table>';
+  }
+
+  async function relistItem(sku, btn) {
+    if (!confirm('Relist "' + sku + '" on eBay now?')) return;
+    btn.disabled = true;
+    btn.textContent = 'Relisting…';
+    try {
+      const res = await fetch('/api/ebay/relist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+        body: JSON.stringify({ sku })
+      });
+      const data = await res.json();
+      if (data.error) {
+        showToast('Relist failed: ' + data.error, 'error');
+        btn.disabled = false;
+        btn.textContent = '↺ Relist';
+        return;
+      }
+      showToast('✓ Relisted! eBay Item ID: ' + data.itemId, 'success');
+      loadEndedListings();
+      loadEbayListings();
+    } catch(e) {
+      showToast('Error: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = '↺ Relist';
+    }
+  }
+
+  async function syncRelist() {
+    const btn = document.getElementById('relist-check-btn');
+    btn.textContent = 'Checking…';
+    btn.classList.add('loading');
+    try {
+      const res = await fetch('/api/sync-relist', {
+        method: 'POST',
+        headers: { 'x-dashboard-password': PASSWORD }
+      });
+      const data = await res.json();
+      if (data.error) { showToast('Error: ' + data.error, 'error'); }
+      else { showToast('Relist check complete'); loadEndedListings(); loadEbayListings(); }
+    } catch(e) {
+      showToast('Error: ' + e.message, 'error');
+    } finally {
+      btn.textContent = '↺ Check Relist';
+      btn.classList.remove('loading');
+    }
   }
 
   // ── Utilities ─────────────────────────────────────────────────────────────
