@@ -14,6 +14,36 @@ try {
   console.warn("weight_lookup.json not found");
 }
 
+// ── Ended Listings Store ─────────────────────────────────────────────────────
+// Persists listings ended due to sellable=N so they can be auto/manually relisted.
+// Schema: { [sku]: { sku, itemId, endedAt, title, ebayPrice, categoryId, conditionId,
+//                    brand, itemType, weightLbs, imageUrl, description, quantity } }
+const ENDED_LISTINGS_PATH = path.join(__dirname, "ended_listings.json");
+
+function loadEndedListings() {
+  try {
+    return JSON.parse(fs.readFileSync(ENDED_LISTINGS_PATH, "utf8"));
+  } catch(e) {
+    return {};
+  }
+}
+
+function saveEndedListings(data) {
+  fs.writeFileSync(ENDED_LISTINGS_PATH, JSON.stringify(data, null, 2), "utf8");
+}
+
+function addEndedListing(entry) {
+  const store = loadEndedListings();
+  store[entry.sku] = { ...entry, endedAt: new Date().toISOString() };
+  saveEndedListings(store);
+}
+
+function removeEndedListing(sku) {
+  const store = loadEndedListings();
+  delete store[sku];
+  saveEndedListings(store);
+}
+
 const app = express();
 app.use(express.json());
 app.use(express.text({ type: "text/xml" }));
@@ -38,7 +68,6 @@ const EBAY_API_URL = EBAY_ENV === "sandbox"
   : "https://api.ebay.com/ws/api.dll";
 
 const MARKUP = parseFloat(process.env.MARKUP_PERCENT || "10") / 100;
-const LOGO_URL = "https://www.grainmill.coop/uploads/b/ee7bbb4445cd029653d297c0f017675bcd272f2f5d280a31073c8a04e963b02e/logo_1775436651.png";
 const PAYPAL_EMAIL = process.env.PAYPAL_EMAIL || "";
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "changeme";
 
@@ -300,16 +329,19 @@ app.post("/api/ebay/list", auth, async (req, res) => {
       .up()
     .up();
 
-  // Business policy IDs (set in Render env vars)
-  const shippingPolicyId  = process.env.EBAY_SHIPPING_POLICY_ID;
-  const returnPolicyId    = process.env.EBAY_RETURN_POLICY_ID;
-  const paymentPolicyId   = process.env.EBAY_PAYMENT_POLICY_ID;
-
-  if (!shippingPolicyId || !returnPolicyId || !paymentPolicyId) {
-    return res.status(400).json({ error: "Missing eBay business policy IDs. Set EBAY_SHIPPING_POLICY_ID, EBAY_RETURN_POLICY_ID, and EBAY_PAYMENT_POLICY_ID in Render environment variables." });
-  }
-
   const xml = itemNode
+        .ele("ShippingDetails")
+          .ele("ShippingType").txt("Calculated").up()
+          .ele("ShippingServiceOptions")
+            .ele("ShippingServicePriority").txt("1").up()
+            .ele("ShippingService").txt("UPSGround").up()
+          .up()
+          .ele("ShipToLocations").txt("US").up()
+          .ele("CalculatedShippingRate")
+            .ele("PackagingHandlingCosts").txt("0.00").up()
+            .ele("OriginatingPostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
+          .up()
+        .up()
         .ele("ShippingPackageDetails")
           .ele("MeasurementUnit").txt("English").up()
           .ele("WeightMajor").txt(String(weightPounds)).up()
@@ -317,18 +349,15 @@ app.post("/api/ebay/list", auth, async (req, res) => {
           .ele("ShippingPackage").txt("ExtraLargePack").up()
           .ele("ShippingIrregular").txt("true").up()
         .up()
-        .ele("SellerProfiles")
-          .ele("SellerShippingProfile")
-            .ele("ShippingProfileID").txt(shippingPolicyId).up()
-          .up()
-          .ele("SellerReturnProfile")
-            .ele("ReturnProfileID").txt(returnPolicyId).up()
-          .up()
-          .ele("SellerPaymentProfile")
-            .ele("PaymentProfileID").txt(paymentPolicyId).up()
-          .up()
+        .ele("ReturnPolicy")
+          .ele("ReturnsAcceptedOption").txt("ReturnsAccepted").up()
+          .ele("RefundOption").txt("MoneyBack").up()
+          .ele("ReturnsWithinOption").txt("Days_30").up()
+          .ele("ShippingCostPaidByOption").txt("Buyer").up()
         .up()
-        .ele("Location").txt("Wake Forest, NC").up()
+        .ele("PaymentMethods").txt("PayPal").up()
+        .ele("PayPalEmailAddress").txt(PAYPAL_EMAIL).up()
+        .ele("Location").txt(process.env.SHIP_FROM_CITY || "Myerstown, PA").up()
         .ele("PostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
         .ele("Site").txt("US").up()
       .up()
@@ -519,8 +548,8 @@ async function topUpQuantityForOrder(ebayOrder) {
 async function removeUnsellableFromEbay() {
   console.log("Running not-for-sale check…");
   try {
-    // 1. Get all active eBay listings with SKUs
-    const ebaySkuMap = {}; // sku -> itemId
+    // 1. Get all active eBay listings with SKUs — capture full item details for relist
+    const ebayItemMap = {}; // sku -> { itemId, title, price, ... }
     for (let page = 1; page <= 10; page++) {
       const xml = create({ version: "1.0", encoding: "utf-8" })
         .ele("GetMyeBaySellingRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
@@ -543,19 +572,30 @@ async function removeUnsellableFromEbay() {
       const resp = parsed?.GetMyeBaySellingResponse;
       const items = [].concat(resp?.ActiveList?.ItemArray?.Item || []);
       items.forEach(item => {
-        if (item.SKU) ebaySkuMap[String(item.SKU)] = item.ItemID;
+        if (item.SKU) {
+          const sku = String(item.SKU);
+          const price = parseFloat(
+            item.SellingStatus?.CurrentPrice?.["_"] ||
+            item.BuyItNowPrice?.["_"] ||
+            item.StartPrice?.["_"] || "0"
+          );
+          ebayItemMap[sku] = {
+            itemId: item.ItemID,
+            title: item.Title || "",
+            ebayPrice: price,
+            quantity: parseInt(item.QuantityAvailable || item.Quantity || "5"),
+          };
+        }
       });
       const totalPages = parseInt(resp?.ActiveList?.PaginationResult?.TotalNumberOfPages || "1");
       if (page >= totalPages) break;
     }
 
-    const listedSkus = Object.keys(ebaySkuMap);
+    const listedSkus = Object.keys(ebayItemMap);
     if (!listedSkus.length) { console.log("No active eBay listings to check."); return; }
 
     // 2. Check each SKU against Square — look for not-for-sale status
-    // Square catalog search by SKU — batch check variations
     const unsellableSkus = [];
-    // We search each SKU individually (Square has no batch SKU lookup by sellability)
     for (const sku of listedSkus) {
       try {
         const res = await fetch(`${SQUARE_BASE}/v2/catalog/search`, {
@@ -570,7 +610,6 @@ async function removeUnsellableFromEbay() {
         const variations = data.objects || [];
         for (const v of variations) {
           const vd = v.item_variation_data || {};
-          // sellable=false or available_for_purchase=false means not for sale
           if (vd.sellable === false || vd.available_for_purchase === false) {
             unsellableSkus.push(sku);
             break;
@@ -586,10 +625,56 @@ async function removeUnsellableFromEbay() {
       return;
     }
 
-    // 3. End eBay listings for unsellable SKUs
+    // 3. Fetch full listing details via GetItem, then end + save for relist
     for (const sku of unsellableSkus) {
-      const itemId = ebaySkuMap[sku];
+      const { itemId, title, ebayPrice, quantity } = ebayItemMap[sku];
       console.log(`Removing eBay listing ${itemId} (SKU: ${sku}) — marked not for sale in Square`);
+
+      // Fetch full item details so we can relist later
+      let savedEntry = { sku, itemId, title, ebayPrice, quantity };
+      try {
+        const getXml = create({ version: "1.0", encoding: "utf-8" })
+          .ele("GetItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+            .ele("RequesterCredentials")
+              .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+            .up()
+            .ele("ItemID").txt(String(itemId)).up()
+            .ele("DetailLevel").txt("ReturnAll").up()
+          .up()
+          .end({ prettyPrint: false });
+
+        const getRes = await fetch(EBAY_API_URL, { method: "POST", headers: ebayHeaders("GetItem"), body: getXml });
+        const getParsed = await parseXml(await getRes.text());
+        const item = getParsed?.GetItemResponse?.Item;
+
+        if (item) {
+          const specs = [].concat(item.ItemSpecifics?.NameValueList || []);
+          const brand = specs.find(s => s.Name === "Brand")?.Value || "";
+          const itemType = specs.find(s => s.Name === "Type")?.Value || "";
+          const weightMajor = parseInt(item.ShippingPackageDetails?.WeightMajor || "0");
+          const weightMinor = parseInt(item.ShippingPackageDetails?.WeightMinor || "0");
+          const weightLbs = parseFloat((weightMajor + weightMinor / 16).toFixed(3));
+          const imageUrl = item.PictureDetails?.PictureURL || "";
+          const description = item.Description || "";
+          const categoryId = item.PrimaryCategory?.CategoryID || "";
+          const conditionId = item.ConditionID || "1000";
+
+          savedEntry = {
+            sku, itemId, title,
+            ebayPrice: parseFloat(item.StartPrice?.["_"] || item.StartPrice || ebayPrice),
+            quantity: parseInt(item.Quantity || quantity),
+            brand, itemType, weightLbs, imageUrl, description,
+            categoryId, conditionId,
+          };
+        }
+      } catch(e) {
+        console.error(`GetItem failed for ${itemId}:`, e.message);
+      }
+
+      // Save to ended listings store
+      addEndedListing(savedEntry);
+
+      // End the eBay listing
       try {
         const xml = create({ version: "1.0", encoding: "utf-8" })
           .ele("EndFixedPriceItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
@@ -607,11 +692,14 @@ async function removeUnsellableFromEbay() {
         if (resp?.Ack === "Failure") {
           const errors = [].concat(resp?.Errors || []);
           console.error(`Failed to end listing ${itemId}:`, errors.map(e => e.ShortMessage).join("; "));
+          // Don't save ended entry if we couldn't actually end it
+          removeEndedListing(sku);
         } else {
-          console.log(`✓ Ended eBay listing ${itemId} for SKU ${sku}`);
+          console.log(`✓ Ended eBay listing ${itemId} for SKU ${sku}, saved for relist`);
         }
       } catch(e) {
         console.error(`End listing error for ${itemId}:`, e.message);
+        removeEndedListing(sku);
       }
     }
   } catch (e) {
@@ -619,10 +707,207 @@ async function removeUnsellableFromEbay() {
   }
 }
 
+// ── Relist a single ended listing on eBay ────────────────────────────────────
+async function relistOnEbay(entry) {
+  const { sku, title, ebayPrice, quantity, categoryId, conditionId,
+          brand, itemType, weightLbs, imageUrl, description } = entry;
+
+  if (!title || !ebayPrice) throw new Error("Missing title or price in saved listing data");
+
+  const totalOz = Math.round(parseFloat(weightLbs || 1) * 16);
+  const weightPounds = Math.floor(totalOz / 16);
+  const weightOunces = totalOz % 16;
+
+  const noConditionCategories = ["14308", "181000", "3025"];
+  const skipCondition = noConditionCategories.includes(String(categoryId));
+
+  let itemNode = create({ version: "1.0", encoding: "utf-8" })
+    .ele("AddFixedPriceItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+      .ele("RequesterCredentials")
+        .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+      .up()
+      .ele("Item")
+        .ele("Title").txt(String(title).substring(0, 80)).up()
+        .ele("Description").txt(description || title).up()
+        .ele("PrimaryCategory")
+          .ele("CategoryID").txt(String(categoryId || "177762")).up()
+        .up()
+        .ele("StartPrice").txt(String(ebayPrice)).up();
+
+  if (!skipCondition) {
+    itemNode = itemNode.ele("ConditionID").txt(String(conditionId || "1000")).up();
+  }
+
+  itemNode = itemNode
+      .ele("Country").txt("US").up()
+      .ele("Currency").txt("USD").up()
+      .ele("DispatchTimeMax").txt("3").up()
+      .ele("ListingDuration").txt("GTC").up()
+      .ele("ListingType").txt("FixedPriceItem").up()
+      .ele("Quantity").txt(String(quantity || 5)).up()
+      .ele("SKU").txt(sku || "").up();
+
+  if (imageUrl) {
+    itemNode = itemNode
+      .ele("PictureDetails")
+        .ele("PictureURL").txt(imageUrl).up()
+      .up();
+  }
+
+  if (brand || itemType) {
+    let specs = itemNode.ele("ItemSpecifics");
+    if (brand) specs = specs.ele("NameValueList").ele("Name").txt("Brand").up().ele("Value").txt(brand).up().up();
+    if (itemType) specs = specs.ele("NameValueList").ele("Name").txt("Type").up().ele("Value").txt(itemType).up().up();
+    specs.ele("NameValueList").ele("Name").txt("Product").up().ele("Value").txt(String(title).substring(0, 65)).up().up();
+    itemNode = specs.up();
+  }
+
+  const xml = itemNode
+      .ele("ShippingDetails")
+        .ele("ShippingType").txt("Calculated").up()
+        .ele("ShippingServiceOptions")
+          .ele("ShippingServicePriority").txt("1").up()
+          .ele("ShippingService").txt("UPSGround").up()
+        .up()
+        .ele("ShipToLocations").txt("US").up()
+        .ele("CalculatedShippingRate")
+          .ele("PackagingHandlingCosts").txt("0.00").up()
+          .ele("OriginatingPostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
+        .up()
+      .up()
+      .ele("ShippingPackageDetails")
+        .ele("MeasurementUnit").txt("English").up()
+        .ele("WeightMajor").txt(String(weightPounds)).up()
+        .ele("WeightMinor").txt(String(weightOunces)).up()
+        .ele("ShippingPackage").txt("ExtraLargePack").up()
+        .ele("ShippingIrregular").txt("true").up()
+      .up()
+      .ele("ReturnPolicy")
+        .ele("ReturnsAcceptedOption").txt("ReturnsAccepted").up()
+        .ele("RefundOption").txt("MoneyBack").up()
+        .ele("ReturnsWithinOption").txt("Days_30").up()
+        .ele("ShippingCostPaidByOption").txt("Buyer").up()
+      .up()
+      .ele("PaymentMethods").txt("PayPal").up()
+      .ele("PayPalEmailAddress").txt(PAYPAL_EMAIL).up()
+      .ele("Location").txt(process.env.SHIP_FROM_CITY || "Myerstown, PA").up()
+      .ele("PostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
+      .ele("Site").txt("US").up()
+    .up()
+  .up()
+  .end({ prettyPrint: false });
+
+  const ebayRes = await fetch(EBAY_API_URL, {
+    method: "POST",
+    headers: ebayHeaders("AddFixedPriceItem"),
+    body: xml,
+  });
+  const xmlText = await ebayRes.text();
+  const parsed = await parseXml(xmlText);
+  const resp = parsed?.AddFixedPriceItemResponse;
+
+  if (resp?.Ack === "Failure" || resp?.Ack === "PartialFailure") {
+    const errors = [].concat(resp?.Errors || []);
+    throw new Error(errors.map(e => e.LongMessage || e.ShortMessage).join("; "));
+  }
+
+  return resp?.ItemID;
+}
+
+// ── Daily job: auto-relist ended listings that are sellable again in Square ──
+async function checkAndRelistFromSquare() {
+  console.log("Running daily auto-relist check…");
+  const store = loadEndedListings();
+  const skus = Object.keys(store);
+  if (!skus.length) { console.log("No ended listings to check."); return; }
+
+  for (const sku of skus) {
+    const entry = store[sku];
+    try {
+      const res = await fetch(`${SQUARE_BASE}/v2/catalog/search`, {
+        method: "POST",
+        headers: squareHeaders(),
+        body: JSON.stringify({
+          object_types: ["ITEM_VARIATION"],
+          query: { exact_query: { attribute_name: "sku", attribute_value: sku } },
+        }),
+      });
+      const data = await res.json();
+      const variations = data.objects || [];
+
+      let isSellable = false;
+      for (const v of variations) {
+        const vd = v.item_variation_data || {};
+        if (vd.sellable !== false && vd.available_for_purchase !== false) {
+          isSellable = true;
+          break;
+        }
+      }
+
+      if (!isSellable) {
+        console.log(`SKU ${sku} still not sellable in Square, skipping.`);
+        continue;
+      }
+
+      console.log(`SKU ${sku} is sellable again — relisting on eBay…`);
+      const newItemId = await relistOnEbay(entry);
+      console.log(`✓ Auto-relisted SKU ${sku} as eBay item ${newItemId}`);
+      removeEndedListing(sku);
+    } catch(e) {
+      console.error(`Auto-relist failed for SKU ${sku}:`, e.message);
+    }
+  }
+}
+
 // ── Run not-for-sale check every 6 hours ─────────────────────────────────────
 setInterval(removeUnsellableFromEbay, 6 * 60 * 60 * 1000);
 // Also run once at startup (after 30s to let server settle)
 setTimeout(removeUnsellableFromEbay, 30 * 1000);
+
+// ── Run auto-relist check once daily ─────────────────────────────────────────
+setInterval(checkAndRelistFromSquare, 24 * 60 * 60 * 1000);
+setTimeout(checkAndRelistFromSquare, 60 * 1000); // first check 60s after startup
+
+// ── GET ended listings ────────────────────────────────────────────────────────
+app.get("/api/ebay/ended-listings", auth, (req, res) => {
+  try {
+    const store = loadEndedListings();
+    const list = Object.values(store).sort((a, b) =>
+      new Date(b.endedAt) - new Date(a.endedAt)
+    );
+    res.json(list);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── POST manually relist a single ended listing ───────────────────────────────
+app.post("/api/ebay/relist", auth, async (req, res) => {
+  const { sku } = req.body;
+  if (!sku) return res.status(400).json({ error: "sku required" });
+
+  const store = loadEndedListings();
+  const entry = store[sku];
+  if (!entry) return res.status(404).json({ error: "No ended listing found for SKU: " + sku });
+
+  try {
+    const newItemId = await relistOnEbay(entry);
+    removeEndedListing(sku);
+    res.json({ success: true, itemId: newItemId });
+  } catch(e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// ── POST manually trigger auto-relist check ───────────────────────────────────
+app.post("/api/sync-relist", auth, async (req, res) => {
+  try {
+    await checkAndRelistFromSquare();
+    res.json({ success: true, message: "Relist check complete" });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ── Manual sync endpoint (hit from dashboard) ────────────────────────────────
 app.post("/api/sync-orders", auth, async (req, res) => {
@@ -833,7 +1118,7 @@ Return ONLY valid JSON, no markdown, no explanation.`;
     // Build the branded HTML template
     const weightDisplay = weight ? weight + " lb" : "—";
     const imgTag = imageUrl
-      ? `<img src="${imageUrl}" alt="${name}" style="width:100%;border-radius:6px;border:0.5px solid #d4c4a0;display:block;" />`
+      ? `<img src="${imageUrl}" alt="${name}" style="width:100%;border-radius:6px;border:0.5px solid #d4c4a0;display:block;" onerror="this.style.background='#f9f6ef';this.style.minHeight='140px'" />`
       : `<div style="width:100%;min-height:140px;background:#f9f6ef;border-radius:6px;border:0.5px solid #d4c4a0;"></div>`;
 
     const ingredientsSection = ingredients
@@ -886,61 +1171,13 @@ Return ONLY valid JSON, no markdown, no explanation.`;
     </div>
   </div>
   <div style="background:#9b804a;padding:13px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-    <span style="color:#f2ede3;font-size:12px;font-family:sans-serif;">The Grain Mill Co-op · 230 S Main St, Wake Forest, NC 27587</span>
+    <span style="color:#f2ede3;font-size:12px;font-family:sans-serif;">The Grain Mill Co-op &middot; 230 S Main St, Wake Forest, NC 27587</span>
     <span style="color:#d4c4a0;font-size:12px;font-family:sans-serif;">Bulk grains, flours &amp; baking supplies</span>
   </div>
 </div>`;
 
     res.json({ html, about, ingredients });
   } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ── eBay: fetch business policy IDs ─────────────────────────────────────────
-app.get("/api/ebay/policies", auth, async (req, res) => {
-  try {
-    const results = {};
-    for (const [type, call] of [
-      ["shipping",  "GetShippingDiscountProfiles"],
-      ["return",    "GetUserPreferences"],
-      ["payment",   "GetPaymentPreferences"],
-    ]) {
-      // Use eBay Fulfillment, Return, and Payment Policy APIs
-    }
-
-    // Use seller profiles API
-    const xml = create({ version: "1.0", encoding: "utf-8" })
-      .ele("GetSellerProfilesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
-        .ele("RequesterCredentials")
-          .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
-        .up()
-        .ele("ProfileType").txt("SHIPPING").up()
-        .ele("ProfileType").txt("RETURN_POLICY").up()
-        .ele("ProfileType").txt("PAYMENT").up()
-      .up()
-      .end({ prettyPrint: false });
-
-    const ebayRes = await fetch(EBAY_API_URL, {
-      method: "POST",
-      headers: ebayHeaders("GetSellerProfiles"),
-      body: xml,
-    });
-    const parsed = await parseXml(await ebayRes.text());
-    const resp = parsed?.GetSellerProfilesResponse;
-
-    const shipping = [].concat(resp?.ShippingProfileList?.ShippingProfile || []).map(p => ({ id: p.ShippingProfileID, name: p.ShippingProfileName }));
-    const returns  = [].concat(resp?.ReturnPolicyProfileList?.ReturnPolicyProfile || []).map(p => ({ id: p.ReturnPolicyProfileID, name: p.ReturnPolicyProfileName }));
-    const payment  = [].concat(resp?.PaymentProfileList?.PaymentProfile || []).map(p => ({ id: p.PaymentProfileID, name: p.PaymentProfileName }));
-
-    res.json({ shipping, returns, payment,
-      env: {
-        EBAY_SHIPPING_POLICY_ID: process.env.EBAY_SHIPPING_POLICY_ID || null,
-        EBAY_RETURN_POLICY_ID:   process.env.EBAY_RETURN_POLICY_ID   || null,
-        EBAY_PAYMENT_POLICY_ID:  process.env.EBAY_PAYMENT_POLICY_ID  || null,
-      }
-    });
-  } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
