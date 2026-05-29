@@ -1100,25 +1100,162 @@ setInterval(checkAndRelistFromSquare, 24 * 60 * 60 * 1000);
 setTimeout(checkAndRelistFromSquare, 60 * 1000); // first check 60s after startup
 
 // ── GET ended listings ────────────────────────────────────────────────────────
-app.get("/api/ebay/ended-listings", auth, (req, res) => {
+app.get("/api/ebay/ended-listings", auth, async (req, res) => {
   try {
-    const store = loadEndedListings();
-    const list = Object.values(store).sort((a, b) =>
-      new Date(b.endedAt) - new Date(a.endedAt)
-    );
-    res.json(list);
+    // Query eBay directly for ended/unsold listings
+    const allItems = [];
+    for (let page = 1; page <= 10; page++) {
+      const xml = create({ version: "1.0", encoding: "utf-8" })
+        .ele("GetMyeBaySellingRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+          .ele("RequesterCredentials")
+            .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+          .up()
+          .ele("UnsoldList")
+            .ele("Include").txt("true").up()
+            .ele("DurationInDays").txt("60").up()
+            .ele("Pagination")
+              .ele("EntriesPerPage").txt("100").up()
+              .ele("PageNumber").txt(String(page)).up()
+            .up()
+          .up()
+          .ele("DetailLevel").txt("ReturnAll").up()
+        .up()
+        .end({ prettyPrint: false });
+
+      const ebayRes = await fetch(EBAY_API_URL, {
+        method: "POST",
+        headers: ebayHeaders("GetMyeBaySelling"),
+        body: xml,
+      });
+      const parsed = await parseXml(await ebayRes.text());
+      const resp = parsed?.GetMyeBaySellingResponse;
+      const items = [].concat(resp?.UnsoldList?.ItemArray?.Item || []);
+      allItems.push(...items);
+      const totalPages = parseInt(resp?.UnsoldList?.PaginationResult?.TotalNumberOfPages || "1");
+      if (page >= totalPages || !items.length) break;
+    }
+
+    // Also merge in any entries from the local file that eBay may not show
+    // (e.g. items ended more than 60 days ago that haven't been relisted)
+    const localStore = loadEndedListings();
+
+    // Build a Set of SKUs already covered by eBay results
+    const ebaySKUs = new Set(allItems.map(i => i.SKU).filter(Boolean));
+
+    const liveList = allItems.map(item => {
+      const sku = item.SKU || "";
+      const local = localStore[sku] || {};
+      // Extract weight safely
+      const rawMaj = item.ShippingPackageDetails?.WeightMajor;
+      const rawMin = item.ShippingPackageDetails?.WeightMinor;
+      const wMaj = parseInt((typeof rawMaj === "object" ? rawMaj?._ || "0" : rawMaj) || "0");
+      const wMin = parseInt((typeof rawMin === "object" ? rawMin?._ || "0" : rawMin) || "0");
+      const weightLbs = wMaj > 0 ? wMaj + wMin / 16
+        : (sku && WEIGHT_LOOKUP[sku]) ? WEIGHT_LOOKUP[sku]
+        : local.weightLbs || null;
+
+      const endTime = item.ListingDetails?.EndTime || item.EndTime || local.endedAt || null;
+      const price = parseFloat(
+        item.BuyItNowPrice?._ || item.BuyItNowPrice ||
+        item.StartPrice?._ || item.StartPrice ||
+        local.ebayPrice || 0
+      );
+
+      return {
+        itemId: item.ItemID || local.itemId || "",
+        sku,
+        title: item.Title || local.title || "",
+        ebayPrice: price,
+        weightLbs,
+        endedAt: endTime,
+        imageUrl: [].concat(item.PictureDetails?.PictureURL || [])[0] || local.imageUrl || "",
+        categoryId: item.PrimaryCategory?.CategoryID || local.categoryId || "",
+        conditionId: item.ConditionID || local.conditionId || "1000",
+        description: item.Description || local.description || "",
+        brand: [].concat(item.ItemSpecifics?.NameValueList || []).find(s => s.Name === "Brand")?.Value || local.brand || "",
+        itemType: [].concat(item.ItemSpecifics?.NameValueList || []).find(s => s.Name === "Type")?.Value || local.itemType || "",
+        quantity: parseInt(item.Quantity || local.quantity || 5),
+        source: "ebay",
+      };
+    });
+
+    // Add local-only entries (not in eBay results) so relist still works
+    const localOnly = Object.values(localStore)
+      .filter(e => !ebaySKUs.has(e.sku))
+      .map(e => ({ ...e, source: "local" }));
+
+    const combined = [...liveList, ...localOnly]
+      .sort((a, b) => new Date(b.endedAt || 0) - new Date(a.endedAt || 0));
+
+    res.json(combined);
   } catch(e) {
-    res.status(500).json({ error: e.message });
+    console.error("ended-listings error:", e.message);
+    // Fall back to local file if eBay query fails
+    try {
+      const store = loadEndedListings();
+      res.json(Object.values(store).sort((a, b) => new Date(b.endedAt) - new Date(a.endedAt)));
+    } catch(e2) {
+      res.status(500).json({ error: e.message });
+    }
   }
 });
 
+
 // ── POST manually relist a single ended listing ───────────────────────────────
 app.post("/api/ebay/relist", auth, async (req, res) => {
-  const { sku } = req.body;
+  const { sku, itemId } = req.body;
   if (!sku) return res.status(400).json({ error: "sku required" });
 
-  const store = loadEndedListings();
-  const entry = store[sku];
+  // Try local store first
+  let entry = loadEndedListings()[sku] || null;
+
+  // If not in local store, fetch from eBay by itemId
+  if (!entry && itemId) {
+    try {
+      const xml = create({ version: "1.0", encoding: "utf-8" })
+        .ele("GetItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+          .ele("RequesterCredentials")
+            .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+          .up()
+          .ele("ItemID").txt(String(itemId)).up()
+          .ele("DetailLevel").txt("ReturnAll").up()
+        .up()
+        .end({ prettyPrint: false });
+
+      const ebayRes = await fetch(EBAY_API_URL, { method: "POST", headers: ebayHeaders("GetItem"), body: xml });
+      const parsed = await parseXml(await ebayRes.text());
+      const item = parsed?.GetItemResponse?.Item;
+
+      if (item) {
+        const specs = [].concat(item.ItemSpecifics?.NameValueList || []);
+        const rawMaj = item.ShippingPackageDetails?.WeightMajor;
+        const rawMin = item.ShippingPackageDetails?.WeightMinor;
+        const wMaj = parseInt((typeof rawMaj === "object" ? rawMaj?._ || "0" : rawMaj) || "0");
+        const wMin = parseInt((typeof rawMin === "object" ? rawMin?._ || "0" : rawMin) || "0");
+        let weightLbs = wMaj > 0 ? wMaj + wMin / 16 : null;
+        if (!weightLbs && WEIGHT_LOOKUP[sku]) weightLbs = WEIGHT_LOOKUP[sku];
+        if (!weightLbs) { const m = (item.Title||"").match(/(\d+(?:\.\d+)?)\s*lb/i); if (m) weightLbs = parseFloat(m[1]); }
+
+        entry = {
+          sku,
+          itemId,
+          title: item.Title || sku,
+          ebayPrice: parseFloat(item.BuyItNowPrice?._ || item.BuyItNowPrice || item.StartPrice?._ || item.StartPrice || 0),
+          quantity: parseInt(item.Quantity || 5),
+          brand: specs.find(s => s.Name === "Brand")?.Value || "Unbranded",
+          itemType: specs.find(s => s.Name === "Type")?.Value || "",
+          weightLbs: weightLbs || 1,
+          imageUrl: [].concat(item.PictureDetails?.PictureURL || [])[0] || "",
+          description: item.Description || "",
+          categoryId: item.PrimaryCategory?.CategoryID || "79631",
+          conditionId: item.ConditionID || "1000",
+        };
+      }
+    } catch(e) {
+      console.error("GetItem for relist failed:", e.message);
+    }
+  }
+
   if (!entry) return res.status(404).json({ error: "No ended listing found for SKU: " + sku });
 
   try {
@@ -1129,6 +1266,7 @@ app.post("/api/ebay/relist", auth, async (req, res) => {
     res.status(400).json({ error: e.message });
   }
 });
+
 
 // ── POST manually trigger auto-relist check ───────────────────────────────────
 app.post("/api/sync-relist", auth, async (req, res) => {
