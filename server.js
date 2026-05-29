@@ -884,9 +884,13 @@ async function removeUnsellableFromEbay() {
           const specs = [].concat(item.ItemSpecifics?.NameValueList || []);
           const brand = specs.find(s => s.Name === "Brand")?.Value || "";
           const itemType = specs.find(s => s.Name === "Type")?.Value || "";
-          const weightMajor = parseInt(item.ShippingPackageDetails?.WeightMajor || "0");
-          const weightMinor = parseInt(item.ShippingPackageDetails?.WeightMinor || "0");
-          const weightLbs = parseFloat((weightMajor + weightMinor / 16).toFixed(3));
+          const rawMaj = item.ShippingPackageDetails?.WeightMajor;
+          const rawMin = item.ShippingPackageDetails?.WeightMinor;
+          const wMajor = parseInt((typeof rawMaj === "object" ? rawMaj?._ || rawMaj?.["$t"] || "0" : rawMaj) || "0");
+          const wMinor = parseInt((typeof rawMin === "object" ? rawMin?._ || rawMin?.["$t"] || "0" : rawMin) || "0");
+          let weightLbs = wMajor > 0 ? parseFloat((wMajor + wMinor / 16).toFixed(3)) : 0;
+          if (!weightLbs && sku && WEIGHT_LOOKUP[sku]) weightLbs = WEIGHT_LOOKUP[sku];
+          if (!weightLbs && title) { const m = title.match(/(\d+(?:\.\d+)?)\s*lb/i); if (m) weightLbs = parseFloat(m[1]); }
           const imageUrl = item.PictureDetails?.PictureURL || "";
           const description = item.Description || "";
           const categoryId = item.PrimaryCategory?.CategoryID || "";
@@ -1556,9 +1560,25 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
 
         const categoryId = fullItem?.PrimaryCategory?.CategoryID || "";
         const imageUrl = [].concat(fullItem?.PictureDetails?.PictureURL || [])[0] || "";
-        const weightMajor = parseInt(fullItem?.ShippingPackageDetails?.WeightMajor || "0");
-        const weightMinor = parseInt(fullItem?.ShippingPackageDetails?.WeightMinor || "0");
-        const weightLbs = weightMajor + weightMinor / 16 || null;
+
+        // Safely extract weight — WeightMajor/Minor may be objects from xml2js
+        const rawMajor = fullItem?.ShippingPackageDetails?.WeightMajor;
+        const rawMinor = fullItem?.ShippingPackageDetails?.WeightMinor;
+        const weightMajor = parseInt((typeof rawMajor === "object" ? rawMajor?._ || rawMajor?.["$t"] || "0" : rawMajor) || "0");
+        const weightMinor = parseInt((typeof rawMinor === "object" ? rawMinor?._ || rawMinor?.["$t"] || "0" : rawMinor) || "0");
+        let weightLbs = weightMajor > 0 ? weightMajor + weightMinor / 16 : null;
+
+        // Fallback: check weight lookup table by SKU
+        if (!weightLbs && sku && WEIGHT_LOOKUP[sku]) {
+          weightLbs = WEIGHT_LOOKUP[sku];
+        }
+
+        // Last resort: try to parse weight from the title (e.g. "25lb", "5 lbs", "50 lb")
+        if (!weightLbs && title) {
+          const wMatch = title.match(/(\d+(?:\.\d+)?)\s*lb/i);
+          if (wMatch) weightLbs = parseFloat(wMatch[1]);
+        }
+
         const existingDesc = fullItem?.Description || "";
 
         // 3. Generate branded description via Claude
