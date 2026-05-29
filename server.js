@@ -44,7 +44,141 @@ function removeEndedListing(sku) {
   saveEndedListings(store);
 }
 
-const app = express();
+// ── eBay Store Category Mapping ───────────────────────────────────────────────
+// Maps eBay marketplace category IDs to exact-mirror Store category names.
+// Store categories are created on demand via SetStoreCategories if they don't exist.
+const EBAY_TO_STORE_CATEGORY = {
+  "257993": "Grains & Rice",
+  "257947": "Flour",
+  "257958": "Breakfast Cereals & Oats",
+  "257991": "Dried Beans & Pulses",
+  "257952": "Yeast, Leavening & Binders",
+  "257951": "Sugar & Sweeteners",
+  "258012": "Dried Fruit & Nuts",
+  "257944": "Bread & Pastry Mixes",
+  "257945": "Cake & Cupcake Mixes",
+  "257946": "Cookie & Brownie Mixes",
+  "257989": "Cooking Oils",
+  "257978": "Salt",
+  "257977": "Pepper & Chili",
+  "257980": "Spices",
+  "257979": "Seasoning Mixes & Blends",
+  "257983": "Honey",
+  "257984": "Jam, Jelly & Preserves",
+  "257985": "Nut Butters",
+  "257988": "Longlife Cooking & Baking Fats",
+  "258013": "Popcorn",
+  "257995": "Prepared Food & Ready Meals",
+  "257971": "Freeze-dried & Dehydrated Foods",
+  "20626":  "Food Storage",
+  "184638": "Grain Mills & Food Mills",
+  "133696": "Food Dehydrators",
+  "79631":  "Other Food & Beverages",
+};
+
+// In-memory cache: Store category name -> Store category ID
+// Populated on first use by fetching the store, then kept in sync.
+let storeCategoryCache = null; // null = not yet loaded
+
+async function loadStoreCategoryCache() {
+  const xml = create({ version: "1.0", encoding: "utf-8" })
+    .ele("GetStoreRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+      .ele("RequesterCredentials")
+        .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+      .up()
+      .ele("LevelLimit").txt("1").up()
+    .up()
+    .end({ prettyPrint: false });
+
+  const res = await fetch(EBAY_API_URL, {
+    method: "POST",
+    headers: ebayHeaders("GetStore"),
+    body: xml,
+  });
+  const parsed = await parseXml(await res.text());
+  const cats = [].concat(
+    parsed?.GetStoreResponse?.Store?.CustomCategories?.CustomCategory || []
+  );
+  storeCategoryCache = {};
+  cats.forEach(c => {
+    if (c.Name && c.CategoryID) {
+      storeCategoryCache[c.Name] = String(c.CategoryID);
+    }
+  });
+  console.log(`Loaded ${Object.keys(storeCategoryCache).length} Store categories from eBay`);
+}
+
+async function getOrCreateStoreCategory(ebayCategoryId) {
+  const categoryName = EBAY_TO_STORE_CATEGORY[String(ebayCategoryId)];
+  if (!categoryName) return null; // unmapped category — skip Store assignment
+
+  // Load cache on first use
+  if (storeCategoryCache === null) {
+    try { await loadStoreCategoryCache(); } catch(e) {
+      console.error("Failed to load Store category cache:", e.message);
+      return null;
+    }
+  }
+
+  // Already exists — return its ID
+  if (storeCategoryCache[categoryName]) {
+    return storeCategoryCache[categoryName];
+  }
+
+  // Doesn't exist — create it via SetStoreCategories
+  console.log(`Creating new Store category: "${categoryName}"`);
+  try {
+    const xml = create({ version: "1.0", encoding: "utf-8" })
+      .ele("SetStoreCategoriesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+        .ele("RequesterCredentials")
+          .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+        .up()
+        .ele("Action").txt("Add").up()
+        .ele("StoreCategories")
+          .ele("CustomCategory")
+            .ele("CategoryID").txt("-1").up()  // -1 = new category
+            .ele("Name").txt(categoryName).up()
+            .ele("Order").txt("999").up()
+          .up()
+        .up()
+      .up()
+      .end({ prettyPrint: false });
+
+    const res = await fetch(EBAY_API_URL, {
+      method: "POST",
+      headers: ebayHeaders("SetStoreCategories"),
+      body: xml,
+    });
+    const parsed = await parseXml(await res.text());
+    const resp = parsed?.SetStoreCategoriesResponse;
+
+    if (resp?.Ack === "Failure") {
+      const errors = [].concat(resp?.Errors || []);
+      console.error(`SetStoreCategories failed for "${categoryName}":`, errors.map(e => e.ShortMessage).join("; "));
+      return null;
+    }
+
+    // eBay returns the new category ID in the response
+    const newCats = [].concat(resp?.CategoryMapping || []);
+    const newId = newCats[0]?.NewCategoryID || null;
+
+    if (newId) {
+      storeCategoryCache[categoryName] = String(newId);
+      console.log(`✓ Created Store category "${categoryName}" with ID ${newId}`);
+      return String(newId);
+    }
+
+    // Fallback: reload cache to pick up the new ID
+    await loadStoreCategoryCache();
+    return storeCategoryCache[categoryName] || null;
+
+  } catch(e) {
+    console.error(`getOrCreateStoreCategory error for "${categoryName}":`, e.message);
+    return null;
+  }
+}
+
+
 app.use(express.json());
 app.use(express.text({ type: "text/xml" }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -98,7 +232,7 @@ async function parseXml(xmlStr) {
 
 // ── Auth middleware for dashboard ────────────────────────────────────────────
 function auth(req, res, next) {
-  const pwd = req.headers["x-dashboard-password"];
+  const pwd = req.headers["x-dashboard-password"] || req.query.pwd;
   if (pwd !== DASHBOARD_PASSWORD) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -277,6 +411,9 @@ app.post("/api/ebay/list", auth, async (req, res) => {
   const noConditionCategories = ["14308", "181000", "3025"];
   const skipCondition = noConditionCategories.includes(String(categoryId));
 
+  // Resolve Store category ID (create if needed)
+  const storeCatId = await getOrCreateStoreCategory(categoryId);
+
   let itemNode = create({ version: "1.0", encoding: "utf-8" })
     .ele("AddFixedPriceItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
       .ele("RequesterCredentials")
@@ -289,6 +426,14 @@ app.post("/api/ebay/list", auth, async (req, res) => {
           .ele("CategoryID").txt(String(categoryId || "177762")).up()
         .up()
         .ele("StartPrice").txt(String(finalPrice)).up();
+
+  // Attach Store category if resolved
+  if (storeCatId) {
+    itemNode = itemNode
+      .ele("Storefront")
+        .ele("StoreCategoryID").txt(storeCatId).up()
+      .up();
+  }
 
   // Only add ConditionID for categories that support it
   if (!skipCondition) {
@@ -721,6 +866,9 @@ async function relistOnEbay(entry) {
   const noConditionCategories = ["14308", "181000", "3025"];
   const skipCondition = noConditionCategories.includes(String(categoryId));
 
+  // Resolve Store category (create if needed)
+  const storeCatId = await getOrCreateStoreCategory(categoryId).catch(() => null);
+
   let itemNode = create({ version: "1.0", encoding: "utf-8" })
     .ele("AddFixedPriceItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
       .ele("RequesterCredentials")
@@ -733,6 +881,15 @@ async function relistOnEbay(entry) {
           .ele("CategoryID").txt(String(categoryId || "177762")).up()
         .up()
         .ele("StartPrice").txt(String(ebayPrice)).up();
+
+  // Attach Store category if resolved
+  if (storeCatId) {
+    itemNode = itemNode
+      .ele("Storefront")
+        .ele("StoreCategoryID").txt(storeCatId).up()
+      .up();
+  }
+
 
   if (!skipCondition) {
     itemNode = itemNode.ele("ConditionID").txt(String(conditionId || "1000")).up();
@@ -1049,7 +1206,7 @@ app.post("/webhook/ebay-account-deletion", (req, res) => {
 app.post("/api/claude/autofill", auth, async (req, res) => {
   const { name, description, weight } = req.body;
 
-  const prompt = "You are an eBay listing expert for a grain mill and whole foods store. Given a product name and description, return ONLY a JSON object with these fields:\n- categoryId: the best eBay US category ID (number as string)\n- brand: brand name from the product (or Unbranded)\n- type: short product type for eBay item specifics\n- weight: weight in lbs as a number (use provided weight, or extract from name, or null)\n- categoryName: human readable category name\n\nProduct name: " + name + "\nDescription: " + (description || "None") + "\nKnown weight (lbs): " + (weight || "unknown") + "\n\nCategory IDs to use:\n257993: Grains & Rice - whole unground grain kernels (wheat berries, corn, barley, millet, quinoa, rye, buckwheat, spelt berries)\n257947: Flour - already ground into flour (all-purpose, bread, wheat, spelt, rye, almond, coconut flour)\n257958: Breakfast Cereals & Oats - oats, oatmeal, granola, grits, farina, hot cereals\n257952: Yeast Leavening & Binders - yeast, baking powder, baking soda, cream of tartar, xanthan gum\n257951: Sugar & Sweeteners - sugar, honey, maple syrup, molasses, stevia\n257944: Bread & Pastry Mixes\n257945: Cake & Cupcake Mixes\n257946: Cookie & Brownie Mixes\n257989: Cooking Oils - olive oil, coconut oil, vegetable oil\n257978: Salt - sea salt, kosher salt, himalayan, canning salt\n257977: Pepper & Chili - black pepper, cayenne, paprika, chili powder\n257980: Spices - cinnamon, cumin, turmeric, nutmeg\n257979: Seasoning Mixes & Blends\n257983: Honey\n257984: Jam Jelly & Preserves\n257985: Nut Butters - peanut butter, almond butter, tahini\n257991: Dried Beans & Pulses - beans, lentils, split peas, chickpeas\n257988: Longlife Cooking & Baking Fats - butter powder, shortening, ghee\n258012: Dried Fruit & Nuts - raisins, dried fruit, nuts, seeds, trail mix\n258013: Popcorn kernels\n257995: Prepared Food & Ready Meals - mixes, soup mixes\n257971: Freeze-dried or Dehydrated Fruits & Vegetables\n20626: Food Storage - mylar bags, vacuum seal bags, oxygen absorbers, mason jars, buckets, canning supplies, storage containers\n184638: Grain Mills & Food Mills - manual or electric grain mills, wheat grinders\n133696: Food Dehydrators\n79631: Other Food & Beverages - anything food that does not fit above\n\nReturn ONLY valid JSON, no markdown, no explanation.";
+  const prompt = "You are an eBay listing expert for a grain mill and whole foods store. Given a product name and description, return ONLY a JSON object with these fields:\n- categoryId: the best eBay US category ID (number as string)\n- brand: brand name from the product (or Unbranded)\n- type: short product type for eBay item specifics\n- weight: weight in lbs as a number (use provided weight, or extract from name, or null)\n- categoryName: human readable category name\n- categoryRationale: one short sentence explaining why this category was chosen (e.g. \"Matches Grains & Rice — whole unground wheat kernel product\")\n\nProduct name: " + name + "\nDescription: " + (description || "None") + "\nKnown weight (lbs): " + (weight || "unknown") + "\n\nCategory IDs to use:\n257993: Grains & Rice - whole unground grain kernels (wheat berries, corn, barley, millet, quinoa, rye, buckwheat, spelt berries)\n257947: Flour - already ground into flour (all-purpose, bread, wheat, spelt, rye, almond, coconut flour)\n257958: Breakfast Cereals & Oats - oats, oatmeal, granola, grits, farina, hot cereals\n257952: Yeast Leavening & Binders - yeast, baking powder, baking soda, cream of tartar, xanthan gum\n257951: Sugar & Sweeteners - sugar, honey, maple syrup, molasses, stevia\n257944: Bread & Pastry Mixes\n257945: Cake & Cupcake Mixes\n257946: Cookie & Brownie Mixes\n257989: Cooking Oils - olive oil, coconut oil, vegetable oil\n257978: Salt - sea salt, kosher salt, himalayan, canning salt\n257977: Pepper & Chili - black pepper, cayenne, paprika, chili powder\n257980: Spices - cinnamon, cumin, turmeric, nutmeg\n257979: Seasoning Mixes & Blends\n257983: Honey\n257984: Jam Jelly & Preserves\n257985: Nut Butters - peanut butter, almond butter, tahini\n257991: Dried Beans & Pulses - beans, lentils, split peas, chickpeas\n257988: Longlife Cooking & Baking Fats - butter powder, shortening, ghee\n258012: Dried Fruit & Nuts - raisins, dried fruit, nuts, seeds, trail mix\n258013: Popcorn kernels\n257995: Prepared Food & Ready Meals - mixes, soup mixes\n257971: Freeze-dried or Dehydrated Fruits & Vegetables\n20626: Food Storage - mylar bags, vacuum seal bags, oxygen absorbers, mason jars, buckets, canning supplies, storage containers\n184638: Grain Mills & Food Mills - manual or electric grain mills, wheat grinders\n133696: Food Dehydrators\n79631: Other Food & Beverages - anything food that does not fit above\n\nReturn ONLY valid JSON, no markdown, no explanation.";
 
   try {
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1076,10 +1233,70 @@ app.post("/api/claude/autofill", auth, async (req, res) => {
   }
 });
 
-// ── Claude: generate branded eBay HTML description ──────────────────────────
-app.post("/api/claude/generate-description", auth, async (req, res) => {
-  const { name, description, sku, weight, imageUrl } = req.body;
+// ── Claude: optimize eBay title for max keyword reach ───────────────────────
+app.post("/api/claude/optimize-title", auth, async (req, res) => {
+  const { name, description, category, weight } = req.body;
 
+  const prompt = `You are an eBay SEO expert specializing in bulk food, grains, and baking supplies. Your job is to write eBay listing titles that maximize search visibility.
+
+eBay titles have a hard limit of 80 characters. The best titles:
+- Lead with the most-searched keyword (product type first, not brand)
+- Include weight/quantity when relevant (buyers search "5 lb", "50 lb", etc.)
+- Include key attributes: grain variety, grind type, certifications (Non-GMO, Organic, Gluten Free)
+- Include common buyer terms: Bulk, Whole, Fresh, Baking, Food Storage, etc.
+- Avoid filler words: "Great", "Best", "Amazing", "Quality"
+- Never truncate mid-word — stay at or under 80 characters exactly
+
+Product name: ${name}
+Description: ${description || "None"}
+Category: ${category || "Unknown"}
+Weight: ${weight ? weight + " lbs" : "unknown"}
+
+Return ONLY a JSON object with this exact structure — no markdown, no explanation:
+{
+  "titles": [
+    { "title": "...", "chars": 0, "rationale": "one sentence explaining keyword strategy" },
+    { "title": "...", "chars": 0, "rationale": "one sentence explaining keyword strategy" }
+  ]
+}
+
+Each title must be 70-80 characters. Count carefully. The "chars" field must be the exact character count of the title string.`;
+
+  try {
+    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY || "",
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 400,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    const claudeData = await claudeRes.json();
+    const text = claudeData.content?.[0]?.text || "{}";
+    const clean = text.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(clean);
+    // Recount chars server-side to catch model miscounts
+    parsed.titles = (parsed.titles || []).map(t => ({
+      ...t,
+      chars: t.title.length
+    }));
+    res.json(parsed);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Claude: generate branded eBay HTML description ──────────────────────────
+const LOGO_URL = "https://ee7bbb4445cd029653d2.cdn6.editmysite.com/uploads/b/ee7bbb4445cd029653d297c0f017675bcd272f2f5d280a31073c8a04e963b02e/logo-no-bg-1_1779714609.png";
+
+// ── Shared: generate branded HTML description for a product ─────────────────
+async function generateBrandedDescription({ name, description, sku, weight, imageUrl }) {
   const prompt = `You are writing eBay listing copy for The Grain Mill Co-op, a bulk grain and baking supplies store in Wake Forest, NC that ships from Dutch Amish Country, PA.
 
 Given the product info below, return ONLY a JSON object with two fields:
@@ -1095,40 +1312,38 @@ SKU: ${sku || "unknown"}
 
 Return ONLY valid JSON, no markdown, no explanation.`;
 
-  try {
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY || "",
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 500,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
+  const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY || "",
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 500,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
 
-    const claudeData = await claudeRes.json();
-    const text = claudeData.content?.[0]?.text || "{}";
-    const clean = text.replace(/```json|```/g, "").trim();
-    const { about, ingredients } = JSON.parse(clean);
+  const claudeData = await claudeRes.json();
+  const text = claudeData.content?.[0]?.text || "{}";
+  const clean = text.replace(/```json|```/g, "").trim();
+  const { about, ingredients } = JSON.parse(clean);
 
-    // Build the branded HTML template
-    const weightDisplay = weight ? weight + " lb" : "—";
-    const imgTag = imageUrl
-      ? `<img src="${imageUrl}" alt="${name}" style="width:100%;border-radius:6px;border:0.5px solid #d4c4a0;display:block;" onerror="this.style.background='#f9f6ef';this.style.minHeight='140px'" />`
-      : `<div style="width:100%;min-height:140px;background:#f9f6ef;border-radius:6px;border:0.5px solid #d4c4a0;"></div>`;
+  const weightDisplay = weight ? weight + " lb" : "—";
+  const imgTag = imageUrl
+    ? `<img src="${imageUrl}" alt="${name}" style="width:100%;border-radius:6px;border:0.5px solid #d4c4a0;display:block;" onerror="this.style.background='#f9f6ef';this.style.minHeight='140px'" />`
+    : `<div style="width:100%;min-height:140px;background:#f9f6ef;border-radius:6px;border:0.5px solid #d4c4a0;"></div>`;
 
-    const ingredientsSection = ingredients
-      ? `<div style="border-top:0.5px solid #d4c4a0;padding-top:18px;margin-bottom:18px;">
-      <div style="font-size:14px;font-weight:500;color:#3a2e1a;margin-bottom:8px;">Ingredients</div>
-      <div style="font-size:14px;color:#5a4a2a;line-height:1.7;font-family:sans-serif;">${ingredients}</div>
-    </div>`
-      : "";
+  const ingredientsSection = ingredients
+    ? `<div style="border-top:0.5px solid #d4c4a0;padding-top:18px;margin-bottom:18px;">
+    <div style="font-size:14px;font-weight:500;color:#3a2e1a;margin-bottom:8px;">Ingredients</div>
+    <div style="font-size:14px;color:#5a4a2a;line-height:1.7;font-family:sans-serif;">${ingredients}</div>
+  </div>`
+    : "";
 
-    const html = `<div style="background:#fff;border-radius:8px;border:0.5px solid #d4c4a0;overflow:hidden;max-width:640px;margin:0 auto;font-family:Georgia,serif;">
+  const html = `<div style="background:#fff;border-radius:8px;border:0.5px solid #d4c4a0;overflow:hidden;max-width:640px;margin:0 auto;font-family:Georgia,serif;">
   <div style="background:#9b804a;padding:16px 24px;display:flex;align-items:center;gap:16px;">
     <img src="${LOGO_URL}" alt="The Grain Mill Co-op" style="height:60px;width:auto;display:block;" />
     <div style="border-left:0.5px solid #c4a46a;padding-left:16px;">
@@ -1176,7 +1391,163 @@ Return ONLY valid JSON, no markdown, no explanation.`;
   </div>
 </div>`;
 
-    res.json({ html, about, ingredients });
+  return { html, about, ingredients };
+}
+
+// ── Bulk Revise: update all active eBay listings ──────────────────────────────
+// For each active listing: regenerates branded description via Claude,
+// resolves/creates Store category, and pushes ReviseFixedPriceItem to eBay.
+// Uses SSE so the dashboard can stream live progress.
+app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
+  // Set up Server-Sent Events so the UI gets live progress
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  function send(data) {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  }
+
+  try {
+    // 1. Fetch all active listings (paginate)
+    send({ type: "status", message: "Fetching active eBay listings…" });
+    const allItems = [];
+    for (let page = 1; page <= 20; page++) {
+      const xml = create({ version: "1.0", encoding: "utf-8" })
+        .ele("GetMyeBaySellingRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+          .ele("RequesterCredentials")
+            .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+          .up()
+          .ele("ActiveList")
+            .ele("Include").txt("true").up()
+            .ele("Pagination")
+              .ele("EntriesPerPage").txt("50").up()
+              .ele("PageNumber").txt(String(page)).up()
+            .up()
+          .up()
+          .ele("DetailLevel").txt("ReturnAll").up()
+        .up()
+        .end({ prettyPrint: false });
+
+      const ebayRes = await fetch(EBAY_API_URL, { method: "POST", headers: ebayHeaders("GetMyeBaySelling"), body: xml });
+      const parsed = await parseXml(await ebayRes.text());
+      const resp = parsed?.GetMyeBaySellingResponse;
+      const items = [].concat(resp?.ActiveList?.ItemArray?.Item || []);
+      allItems.push(...items);
+      const totalPages = parseInt(resp?.ActiveList?.PaginationResult?.TotalNumberOfPages || "1");
+      if (page >= totalPages) break;
+    }
+
+    const total = allItems.length;
+    send({ type: "status", message: `Found ${total} active listings. Starting revise…`, total });
+
+    let succeeded = 0;
+    let failed = 0;
+
+    for (let i = 0; i < allItems.length; i++) {
+      const item = allItems[i];
+      const itemId = item.ItemID;
+      const title = item.Title || "";
+      const sku = item.SKU || "";
+
+      send({ type: "progress", index: i + 1, total, itemId, title, sku, status: "working" });
+
+      try {
+        // 2. Fetch full item details (need image, weight, category, existing desc)
+        const getXml = create({ version: "1.0", encoding: "utf-8" })
+          .ele("GetItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+            .ele("RequesterCredentials")
+              .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+            .up()
+            .ele("ItemID").txt(String(itemId)).up()
+            .ele("DetailLevel").txt("ReturnAll").up()
+          .up()
+          .end({ prettyPrint: false });
+
+        const getRes = await fetch(EBAY_API_URL, { method: "POST", headers: ebayHeaders("GetItem"), body: getXml });
+        const getParsed = await parseXml(await getRes.text());
+        const fullItem = getParsed?.GetItemResponse?.Item;
+
+        const categoryId = fullItem?.PrimaryCategory?.CategoryID || "";
+        const imageUrl = [].concat(fullItem?.PictureDetails?.PictureURL || [])[0] || "";
+        const weightMajor = parseInt(fullItem?.ShippingPackageDetails?.WeightMajor || "0");
+        const weightMinor = parseInt(fullItem?.ShippingPackageDetails?.WeightMinor || "0");
+        const weightLbs = weightMajor + weightMinor / 16 || null;
+        const existingDesc = fullItem?.Description || "";
+
+        // 3. Generate branded description via Claude
+        const { html } = await generateBrandedDescription({
+          name: title,
+          description: existingDesc,
+          sku,
+          weight: weightLbs,
+          imageUrl,
+        });
+
+        // 4. Resolve/create Store category
+        const storeCatId = await getOrCreateStoreCategory(categoryId).catch(() => null);
+
+        // 5. Build ReviseFixedPriceItem XML
+        let reviseNode = create({ version: "1.0", encoding: "utf-8" })
+          .ele("ReviseFixedPriceItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+            .ele("RequesterCredentials")
+              .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+            .up()
+            .ele("Item")
+              .ele("ItemID").txt(String(itemId)).up()
+              .ele("Description").txt(html).up();
+
+        if (storeCatId) {
+          reviseNode = reviseNode
+            .ele("Storefront")
+              .ele("StoreCategoryID").txt(storeCatId).up()
+            .up();
+        }
+
+        const reviseXml = reviseNode.up().up().end({ prettyPrint: false });
+
+        const reviseRes = await fetch(EBAY_API_URL, {
+          method: "POST",
+          headers: ebayHeaders("ReviseFixedPriceItem"),
+          body: reviseXml,
+        });
+        const reviseParsed = await parseXml(await reviseRes.text());
+        const reviseResp = reviseParsed?.ReviseFixedPriceItemResponse;
+
+        if (reviseResp?.Ack === "Failure") {
+          const errors = [].concat(reviseResp?.Errors || []);
+          const msg = errors.map(e => e.ShortMessage).join("; ");
+          send({ type: "progress", index: i + 1, total, itemId, title, sku, status: "error", message: msg });
+          failed++;
+        } else {
+          send({ type: "progress", index: i + 1, total, itemId, title, sku, status: "done",
+            storeCat: storeCatId ? (EBAY_TO_STORE_CATEGORY[String(categoryId)] || categoryId) : null });
+          succeeded++;
+        }
+      } catch(e) {
+        send({ type: "progress", index: i + 1, total, itemId, title, sku, status: "error", message: e.message });
+        failed++;
+      }
+
+      // 500ms delay between items to respect eBay rate limits
+      if (i < allItems.length - 1) await new Promise(r => setTimeout(r, 500));
+    }
+
+    send({ type: "done", total, succeeded, failed });
+  } catch(e) {
+    send({ type: "error", message: e.message });
+  } finally {
+    res.end();
+  }
+});
+
+// ── Claude: generate branded eBay HTML description (single item) ─────────────
+app.post("/api/claude/generate-description", auth, async (req, res) => {
+  const { name, description, sku, weight, imageUrl } = req.body;
+  try {
+    const result = await generateBrandedDescription({ name, description, sku, weight, imageUrl });
+    res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1380,6 +1751,297 @@ app.post("/api/ebay/end-listing", auth, async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ── Approval Queue System ─────────────────────────────────────────────────────
+// Queue items schema:
+// { id, addedAt, status: 'processing'|'ready'|'approved'|'skipped'|'error',
+//   product: { catalogId, variationId, name, description, sku, category,
+//              squarePrice, ebayPrice, imageUrl, weight },
+//   ai: { titles: [{title,chars,rationale}], selectedTitle, categoryId,
+//         categoryName, categoryRationale, brand, type, descriptionHtml },
+//   error: string|null }
+
+const QUEUE_PATH = path.join(__dirname, "queue.json");
+
+function loadQueue() {
+  try { return JSON.parse(fs.readFileSync(QUEUE_PATH, "utf8")); }
+  catch(e) { return []; }
+}
+
+function saveQueue(q) {
+  fs.writeFileSync(QUEUE_PATH, JSON.stringify(q, null, 2), "utf8");
+}
+
+function queueUpdate(id, patch) {
+  const q = loadQueue();
+  const idx = q.findIndex(i => i.id === id);
+  if (idx !== -1) { q[idx] = { ...q[idx], ...patch }; saveQueue(q); }
+}
+
+// Background: run AI pre-processing on a queue item
+async function processQueueItem(id) {
+  const q = loadQueue();
+  const item = q.find(i => i.id === id);
+  if (!item) return;
+
+  try {
+    const { name, description, sku, weight, imageUrl, category, ebayPrice } = item.product;
+
+    // Run autofill + title optimization in parallel
+    const [autofillData, titleData, descData] = await Promise.all([
+      // Autofill: category, brand, type, rationale
+      fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514", max_tokens: 300,
+          messages: [{ role: "user", content:
+            "You are an eBay listing expert for a grain mill and whole foods store. Return ONLY a JSON object:\n" +
+            "- categoryId: best eBay US category ID (string)\n- brand: brand or Unbranded\n- type: short product type\n" +
+            "- weight: weight in lbs as number or null\n- categoryName: human readable name\n" +
+            "- categoryRationale: one short sentence explaining category choice\n\n" +
+            "Product: " + name + "\nDescription: " + (description||"None") + "\nWeight: " + (weight||"unknown") + "\n\n" +
+            "Categories:\n257993: Grains & Rice\n257947: Flour\n257958: Breakfast Cereals & Oats\n" +
+            "257952: Yeast, Leavening & Binders\n257951: Sugar & Sweeteners\n257944: Bread & Pastry Mixes\n" +
+            "257945: Cake & Cupcake Mixes\n257946: Cookie & Brownie Mixes\n257989: Cooking Oils\n" +
+            "257978: Salt\n257977: Pepper & Chili\n257980: Spices\n257979: Seasoning Mixes & Blends\n" +
+            "257983: Honey\n257984: Jam, Jelly & Preserves\n257985: Nut Butters\n" +
+            "257991: Dried Beans & Pulses\n257988: Longlife Cooking & Baking Fats\n" +
+            "258012: Dried Fruit & Nuts\n258013: Popcorn\n257995: Prepared Food & Ready Meals\n" +
+            "257971: Freeze-dried & Dehydrated Foods\n20626: Food Storage\n" +
+            "184638: Grain Mills & Food Mills\n133696: Food Dehydrators\n79631: Other Food & Beverages\n\n" +
+            "Return ONLY valid JSON, no markdown."
+          }]
+        })
+      }).then(r => r.json()).then(d => JSON.parse((d.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim())),
+
+      // Title optimization
+      fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514", max_tokens: 400,
+          messages: [{ role: "user", content:
+            "You are an eBay SEO expert for bulk food and grains. Write 2 eBay titles maximizing search visibility.\n" +
+            "Rules: lead with most-searched keyword, include weight when relevant, include attributes (Non-GMO, Organic, Bulk, Whole), avoid filler words, 70-80 chars each.\n" +
+            "Product: " + name + "\nDescription: " + (description||"None") + "\nWeight: " + (weight?weight+" lbs":"unknown") + "\n\n" +
+            'Return ONLY JSON: {"titles":[{"title":"...","chars":0,"rationale":"..."},{"title":"...","chars":0,"rationale":"..."}]}'
+          }]
+        })
+      }).then(r => r.json()).then(d => {
+        const parsed = JSON.parse((d.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim());
+        parsed.titles = (parsed.titles||[]).map(t => ({ ...t, chars: t.title.length }));
+        return parsed;
+      }),
+
+      // Description generation
+      generateBrandedDescription({ name, description, sku, weight, imageUrl })
+    ]);
+
+    queueUpdate(id, {
+      status: "ready",
+      ai: {
+        titles: titleData.titles || [],
+        selectedTitle: (titleData.titles||[])[0]?.title || name.substring(0,80),
+        categoryId: autofillData.categoryId || "79631",
+        categoryName: autofillData.categoryName || "",
+        categoryRationale: autofillData.categoryRationale || "",
+        brand: autofillData.brand || "Unbranded",
+        type: autofillData.type || "",
+        weight: autofillData.weight || weight || null,
+        descriptionHtml: descData.html || "",
+      }
+    });
+
+    console.log(`✓ Queue item ${id} processed: ${name}`);
+  } catch(e) {
+    console.error(`Queue processing failed for ${id}:`, e.message);
+    queueUpdate(id, { status: "error", error: e.message });
+  }
+}
+
+// ── GET queue
+app.get("/api/queue", auth, (req, res) => {
+  res.json(loadQueue());
+});
+
+// ── GET queue stats
+app.get("/api/queue/stats", auth, (req, res) => {
+  const q = loadQueue();
+  res.json({
+    total: q.length,
+    ready: q.filter(i => i.status === "ready").length,
+    processing: q.filter(i => i.status === "processing").length,
+    error: q.filter(i => i.status === "error").length,
+  });
+});
+
+// ── POST add item to queue
+app.post("/api/queue/add", auth, async (req, res) => {
+  const { product } = req.body;
+  if (!product || !product.sku) return res.status(400).json({ error: "product with sku required" });
+
+  const q = loadQueue();
+
+  // Prevent duplicates
+  if (q.find(i => i.product.sku === product.sku && !["approved","skipped"].includes(i.status))) {
+    return res.status(409).json({ error: "Item already in queue" });
+  }
+
+  const id = `q_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
+  const item = {
+    id, addedAt: new Date().toISOString(),
+    status: "processing",
+    product, ai: null, error: null
+  };
+
+  q.push(item);
+  saveQueue(q);
+  res.json({ id, status: "processing" });
+
+  // Kick off background processing (non-blocking)
+  processQueueItem(id).catch(e => console.error("processQueueItem error:", e.message));
+});
+
+// ── POST approve queue item — lists to eBay
+app.post("/api/queue/approve", auth, async (req, res) => {
+  const { id, selectedTitle, categoryId, brand, type, weight, price, quantity } = req.body;
+  if (!id) return res.status(400).json({ error: "id required" });
+
+  const q = loadQueue();
+  const item = q.find(i => i.id === id);
+  if (!item) return res.status(404).json({ error: "Queue item not found" });
+  if (item.status !== "ready") return res.status(400).json({ error: "Item not ready" });
+
+  const { product, ai } = item;
+  const finalTitle = selectedTitle || ai.selectedTitle || product.name.substring(0,80);
+  const finalCat = categoryId || ai.categoryId || "79631";
+  const finalBrand = brand || ai.brand || "Unbranded";
+  const finalType = type || ai.type || "";
+  const finalWeight = parseFloat(weight || ai.weight || 1);
+  const finalPrice = parseFloat(price || product.ebayPrice);
+  const finalQty = parseInt(quantity || 5);
+
+  try {
+    // Resolve store category
+    const storeCatId = await getOrCreateStoreCategory(finalCat).catch(() => null);
+
+    const totalOz = Math.round(finalWeight * 16);
+    const weightPounds = Math.floor(totalOz / 16);
+    const weightOunces = totalOz % 16;
+    const noConditionCategories = ["14308","181000","3025"];
+    const skipCondition = noConditionCategories.includes(String(finalCat));
+
+    let itemNode = create({ version:"1.0", encoding:"utf-8" })
+      .ele("AddFixedPriceItemRequest", { xmlns:"urn:ebay:apis:eBLBaseComponents" })
+        .ele("RequesterCredentials").ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up().up()
+        .ele("Item")
+          .ele("Title").txt(finalTitle.substring(0,80)).up()
+          .ele("Description").txt(ai.descriptionHtml || product.name).up()
+          .ele("PrimaryCategory").ele("CategoryID").txt(String(finalCat)).up().up()
+          .ele("StartPrice").txt(String(finalPrice)).up();
+
+    if (!skipCondition) itemNode = itemNode.ele("ConditionID").txt("1000").up();
+    if (storeCatId) itemNode = itemNode.ele("Storefront").ele("StoreCategoryID").txt(storeCatId).up().up();
+
+    itemNode = itemNode
+      .ele("Country").txt("US").up()
+      .ele("Currency").txt("USD").up()
+      .ele("DispatchTimeMax").txt("3").up()
+      .ele("ListingDuration").txt("GTC").up()
+      .ele("ListingType").txt("FixedPriceItem").up()
+      .ele("Quantity").txt(String(finalQty)).up()
+      .ele("SKU").txt(product.sku || "").up();
+
+    if (product.imageUrl) {
+      itemNode = itemNode.ele("PictureDetails").ele("PictureURL").txt(product.imageUrl).up().up();
+    }
+
+    itemNode = itemNode
+      .ele("ItemSpecifics")
+        .ele("NameValueList").ele("Name").txt("Brand").up().ele("Value").txt(finalBrand).up().up()
+        .ele("NameValueList").ele("Name").txt("Type").up().ele("Value").txt(finalType).up().up()
+        .ele("NameValueList").ele("Name").txt("Product").up().ele("Value").txt(finalTitle.substring(0,65)).up().up()
+      .up();
+
+    const xml = itemNode
+      .ele("ShippingDetails")
+        .ele("ShippingType").txt("Calculated").up()
+        .ele("ShippingServiceOptions")
+          .ele("ShippingServicePriority").txt("1").up()
+          .ele("ShippingService").txt("UPSGround").up()
+        .up()
+        .ele("ShipToLocations").txt("US").up()
+        .ele("CalculatedShippingRate")
+          .ele("PackagingHandlingCosts").txt("0.00").up()
+          .ele("OriginatingPostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
+        .up()
+      .up()
+      .ele("ShippingPackageDetails")
+        .ele("MeasurementUnit").txt("English").up()
+        .ele("WeightMajor").txt(String(weightPounds)).up()
+        .ele("WeightMinor").txt(String(weightOunces)).up()
+        .ele("ShippingPackage").txt("ExtraLargePack").up()
+        .ele("ShippingIrregular").txt("true").up()
+      .up()
+      .ele("ReturnPolicy")
+        .ele("ReturnsAcceptedOption").txt("ReturnsAccepted").up()
+        .ele("RefundOption").txt("MoneyBack").up()
+        .ele("ReturnsWithinOption").txt("Days_30").up()
+        .ele("ShippingCostPaidByOption").txt("Buyer").up()
+      .up()
+      .ele("PaymentMethods").txt("PayPal").up()
+      .ele("PayPalEmailAddress").txt(PAYPAL_EMAIL).up()
+      .ele("Location").txt(process.env.SHIP_FROM_CITY || "Myerstown, PA").up()
+      .ele("PostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
+      .ele("Site").txt("US").up()
+      .up().up().end({ prettyPrint: false });
+
+    const ebayRes = await fetch(EBAY_API_URL, { method:"POST", headers:ebayHeaders("AddFixedPriceItem"), body:xml });
+    const parsed = await parseXml(await ebayRes.text());
+    const resp = parsed?.AddFixedPriceItemResponse;
+
+    if (resp?.Ack === "Failure" || resp?.Ack === "PartialFailure") {
+      const errors = [].concat(resp?.Errors || []);
+      const msg = errors.map(e => e.LongMessage || e.ShortMessage).join("; ");
+      return res.status(400).json({ error: msg });
+    }
+
+    queueUpdate(id, { status: "approved", itemId: resp?.ItemID });
+    res.json({ success: true, itemId: resp?.ItemID });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── POST skip queue item
+app.post("/api/queue/skip", auth, (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ error: "id required" });
+  const q = loadQueue();
+  const item = q.find(i => i.id === id);
+  if (!item) return res.status(404).json({ error: "not found" });
+  // Move to end of queue with skipped status — can be re-added
+  queueUpdate(id, { status: "skipped" });
+  res.json({ success: true });
+});
+
+// ── DELETE remove item from queue
+app.delete("/api/queue/:id", auth, (req, res) => {
+  const q = loadQueue().filter(i => i.id !== req.params.id);
+  saveQueue(q);
+  res.json({ success: true });
+});
+
+// ── POST retry a failed queue item
+app.post("/api/queue/retry", auth, async (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ error: "id required" });
+  queueUpdate(id, { status: "processing", error: null, ai: null });
+  res.json({ success: true });
+  processQueueItem(id).catch(e => console.error("retry error:", e.message));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
