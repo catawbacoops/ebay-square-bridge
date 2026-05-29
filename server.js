@@ -2136,6 +2136,13 @@ app.post("/api/queue/retry", auth, async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Global error handler — ensures every unhandled error returns JSON ─────────
+app.use((err, req, res, next) => {
+  console.error("Unhandled express error:", err.message, err.stack);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: err.message || "Internal server error" });
+});
+
 app.listen(PORT, () => {
   console.log(`eBay-Square bridge running on port ${PORT}`);
   // Pre-load seller profiles on boot so the raw API response appears in logs
