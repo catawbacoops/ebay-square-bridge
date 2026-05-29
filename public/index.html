@@ -3,265 +3,226 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>eBay Lister</title>
+  <title>Grain Mill Co-op · eBay Lister</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #1a1a1f;
-      color: #e8e8f0;
-      min-height: 100vh;
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1a1a1f; color: #e8e8f0; min-height: 100vh; }
 
     /* ── Login ── */
-    #login-screen {
-      display: flex; align-items: center; justify-content: center;
-      min-height: 100vh; background: #1a1a1f;
-    }
-    .login-box {
-      background: #24242c; border-radius: 12px; padding: 36px 32px;
-      width: 340px; box-shadow: 0 2px 16px rgba(0,0,0,0.08);
-    }
+    #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-box { background: #24242c; border-radius: 12px; padding: 36px 32px; width: 340px; box-shadow: 0 2px 16px rgba(0,0,0,0.3); }
     .login-box h1 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
     .login-box p { font-size: 13px; color: #6e6e82; margin-bottom: 24px; }
-    .login-box input {
-      width: 100%; padding: 10px 12px; border: 1.5px solid #35353f;
-      border-radius: 8px; font-size: 14px; margin-bottom: 12px; outline: none;
-    }
+    .login-box input { width: 100%; padding: 10px 12px; border: 1.5px solid #35353f; border-radius: 8px; font-size: 14px; margin-bottom: 12px; outline: none; background: #1e1e26; color: #e8e8f0; }
     .login-box input:focus { border-color: #E53238; }
-    .login-box button {
-      width: 100%; padding: 11px; background: #E53238; color: #fff;
-      border: none; border-radius: 8px; font-size: 15px; font-weight: 500;
-      cursor: pointer;
-    }
+    .login-box button { width: 100%; padding: 11px; background: #E53238; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 500; cursor: pointer; }
     .login-box button:hover { background: #c42b30; }
     .login-err { font-size: 13px; color: #c42b30; margin-top: 8px; }
 
     /* ── App shell ── */
     #app { display: none; }
-
-    header {
-      background: #24242c; border-bottom: 1px solid #35353f;
-      padding: 0 24px; height: 56px;
-      display: flex; align-items: center; justify-content: space-between;
-    }
+    header { background: #24242c; border-bottom: 1px solid #35353f; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; }
     .logo { display: flex; align-items: center; gap: 10px; }
-    .logo-badge {
-      background: #E53238; color: #fff; font-size: 12px; font-weight: 700;
-      padding: 3px 8px; border-radius: 4px; letter-spacing: 0.02em;
-    }
+    .logo-badge { background: #E53238; color: #fff; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 4px; }
     header h1 { font-size: 15px; font-weight: 600; }
-    .header-actions { display: flex; gap: 10px; align-items: center; }
-    .sync-btn {
-      font-size: 13px; padding: 6px 14px; border-radius: 6px;
-      border: 1.5px solid #4a4a58; background: #2e2e3a; color: #c8c8d8; cursor: pointer; font-weight: 500;
-    }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+    .sync-btn { font-size: 12px; padding: 5px 12px; border-radius: 6px; border: 1.5px solid #4a4a58; background: #2e2e3a; color: #c8c8d8; cursor: pointer; font-weight: 500; white-space: nowrap; }
     .sync-btn:hover { background: #38384a; border-color: #5a5a6a; color: #e8e8f0; }
     .sync-btn.loading { opacity: 0.6; pointer-events: none; }
 
-    main { max-width: 960px; margin: 0 auto; padding: 28px 24px; }
+    /* ── Tab bar ── */
+    .tab-bar { display: flex; gap: 2px; padding: 0 24px; background: #24242c; border-bottom: 1px solid #35353f; }
+    .tab-btn { padding: 11px 18px; font-size: 13px; font-weight: 500; color: #6e6e82; border: none; background: none; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s; white-space: nowrap; }
+    .tab-btn:hover { color: #e8e8f0; }
+    .tab-btn.active { color: #E53238; border-bottom-color: #E53238; }
+    .tab-badge { display: inline-block; background: #f59e0b; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 8px; margin-left: 5px; vertical-align: middle; }
+    .tab-badge.green { background: #1D9E75; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
 
-    /* ── Stats bar ── */
-    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
-    .stat-card {
-      background: #24242c; border-radius: 10px; padding: 14px 16px;
-      border: 1px solid #35353f;
-    }
-    .stat-card p:first-child { font-size: 11px; color: #6e6e82; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-    .stat-card p:last-child { font-size: 22px; font-weight: 600; color: #e8e8f0; }
+    main { max-width: 980px; margin: 0 auto; padding: 24px 24px; }
 
-    /* ── Search panel ── */
+    /* ── Panels ── */
     .panel { background: #24242c; border-radius: 10px; border: 1px solid #35353f; margin-bottom: 20px; overflow: hidden; }
     .panel-header { padding: 14px 18px; border-bottom: 1px solid #2e2e38; display: flex; align-items: center; justify-content: space-between; }
     .panel-header h2 { font-size: 14px; font-weight: 600; }
     .panel-body { padding: 16px 18px; }
 
+    /* ── Stats bar ── */
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    .stat-card { background: #24242c; border-radius: 10px; padding: 14px 16px; border: 1px solid #35353f; }
+    .stat-card p:first-child { font-size: 11px; color: #6e6e82; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .stat-card p:last-child { font-size: 22px; font-weight: 600; }
+
+    /* ── Queue card ── */
+    .queue-card { background: #1e1e28; border: 1px solid #35353f; border-radius: 12px; padding: 24px; max-width: 720px; margin: 0 auto; }
+    .queue-card-header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
+    .queue-card-photo { width: 80px; height: 80px; border-radius: 8px; object-fit: cover; border: 1px solid #35353f; flex-shrink: 0; background: #2a2a32; }
+    .queue-card-photo-empty { width: 80px; height: 80px; border-radius: 8px; border: 1px dashed #35353f; flex-shrink: 0; background: #2a2a32; display: flex; align-items: center; justify-content: center; color: #555566; font-size: 22px; }
+    .queue-card-meta { flex: 1; }
+    .queue-card-name { font-size: 17px; font-weight: 600; color: #e8e8f0; margin-bottom: 4px; line-height: 1.3; }
+    .queue-card-sku { font-size: 12px; color: #6e6e82; margin-bottom: 6px; }
+    .queue-card-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+    .badge-processing { background: #2a2a3a; color: #9b804a; border: 1px solid #9b804a44; }
+    .badge-ready { background: #1a2e25; color: #1D9E75; border: 1px solid #1D9E7544; }
+    .badge-error { background: #2e1a1a; color: #c42b30; border: 1px solid #c42b3044; }
+
+    /* Title picker */
+    .title-picker { margin-bottom: 16px; }
+    .title-picker-label { font-size: 11px; font-weight: 600; color: #6e6e82; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .title-option { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1.5px solid #35353f; border-radius: 8px; cursor: pointer; margin-bottom: 6px; transition: border-color 0.15s; }
+    .title-option:hover { border-color: #5a5a6a; }
+    .title-option.selected { border-color: #1D9E75; background: #1a2e25; }
+    .title-option input[type=radio] { margin-top: 2px; accent-color: #1D9E75; flex-shrink: 0; }
+    .title-option-text { flex: 1; }
+    .title-option-str { font-size: 13px; color: #e8e8f0; line-height: 1.4; margin-bottom: 3px; }
+    .title-option-meta { font-size: 11px; color: #6e6e82; }
+    .title-option-chars { font-weight: 600; margin-right: 8px; }
+    .title-option-chars.good { color: #1D9E75; }
+    .title-option-chars.warn { color: #f59e0b; }
+    .title-custom-row { margin-top: 6px; }
+    .title-custom-row input { width: 100%; padding: 8px 10px; border: 1.5px solid #35353f; border-radius: 7px; font-size: 13px; outline: none; background: #1e1e26; color: #e8e8f0; }
+    .title-custom-row input:focus { border-color: #E53238; }
+    .title-char-count { font-size: 11px; color: #555566; margin-top: 3px; text-align: right; }
+
+    /* Field grid */
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .field-item label { display: block; font-size: 11px; font-weight: 600; color: #6e6e82; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 5px; }
+    .field-item input, .field-item select { width: 100%; padding: 8px 10px; border: 1.5px solid #35353f; border-radius: 7px; font-size: 13px; outline: none; background: #1e1e26; color: #e8e8f0; }
+    .field-item input:focus, .field-item select:focus { border-color: #E53238; }
+    .field-hint { font-size: 11px; color: #9b804a; margin-top: 3px; }
+
+    /* Description preview in card */
+    .desc-preview-wrap { border: 1px solid #35353f; border-radius: 8px; overflow: hidden; background: #f2ede3; margin-bottom: 16px; }
+    .desc-preview-inner { pointer-events: none; transform: scale(0.65); transform-origin: top left; width: 154%; }
+    .desc-preview-container { overflow: hidden; max-height: 220px; }
+
+    /* Queue card actions */
+    .queue-actions { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+    .btn-approve { flex: 1; padding: 11px; background: #1D9E75; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .btn-approve:hover { background: #178a63; }
+    .btn-approve:disabled { background: #1a4a38; color: #4a8a70; cursor: not-allowed; }
+    .btn-skip { padding: 11px 18px; background: #24242c; color: #a0a0b0; border: 1.5px solid #35353f; border-radius: 8px; font-size: 14px; cursor: pointer; }
+    .btn-skip:hover { background: #2a2a32; }
+    .btn-remove { padding: 11px 14px; background: transparent; color: #c42b30; border: 1.5px solid #c42b3044; border-radius: 8px; font-size: 13px; cursor: pointer; }
+    .btn-remove:hover { background: #2e1a1a; }
+
+    /* Queue empty / processing states */
+    .queue-empty { text-align: center; padding: 60px 24px; color: #555566; }
+    .queue-empty .queue-empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .queue-empty h3 { font-size: 16px; font-weight: 600; color: #6e6e82; margin-bottom: 8px; }
+    .queue-empty p { font-size: 13px; line-height: 1.6; }
+    .queue-processing { text-align: center; padding: 40px 24px; }
+    .spinner { width: 32px; height: 32px; border: 3px solid #35353f; border-top-color: #9b804a; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Queue list (sidebar style) */
+    .queue-layout { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
+    .queue-sidebar { background: #1e1e28; border: 1px solid #35353f; border-radius: 10px; overflow: hidden; }
+    .queue-sidebar-header { padding: 12px 14px; border-bottom: 1px solid #2e2e38; font-size: 12px; font-weight: 600; color: #6e6e82; text-transform: uppercase; letter-spacing: 0.05em; }
+    .queue-sidebar-item { padding: 10px 14px; border-bottom: 1px solid #2a2a32; cursor: pointer; transition: background 0.1s; display: flex; align-items: center; gap: 8px; }
+    .queue-sidebar-item:last-child { border-bottom: none; }
+    .queue-sidebar-item:hover { background: #24242c; }
+    .queue-sidebar-item.active { background: #24242c; border-left: 3px solid #1D9E75; }
+    .queue-sidebar-item.active.processing { border-left-color: #9b804a; }
+    .queue-sidebar-item.active.error { border-left-color: #c42b30; }
+    .queue-item-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .dot-ready { background: #1D9E75; }
+    .dot-processing { background: #9b804a; animation: pulse 1.5s ease-in-out infinite; }
+    .dot-error { background: #c42b30; }
+    .dot-approved { background: #555566; }
+    .dot-skipped { background: #555566; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .queue-item-name { font-size: 12px; color: #c8c8d8; line-height: 1.3; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .queue-item-sku { font-size: 10px; color: #555566; }
+
+    /* Search tab */
     .search-row { display: flex; gap: 10px; margin-bottom: 14px; }
-    .search-row input {
-      flex: 1; padding: 9px 12px; border: 1.5px solid #35353f;
-      border-radius: 8px; font-size: 14px; outline: none;
-    }
+    .search-row input { flex: 1; padding: 9px 12px; border: 1.5px solid #35353f; border-radius: 8px; font-size: 14px; outline: none; background: #1e1e26; color: #e8e8f0; }
     .search-row input:focus { border-color: #E53238; }
     .markup-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #a0a0b0; }
-    .markup-row input {
-      width: 64px; padding: 6px 8px; border: 1.5px solid #35353f;
-      border-radius: 6px; font-size: 14px; text-align: center; outline: none;
-    }
+    .markup-row input { width: 64px; padding: 6px 8px; border: 1.5px solid #35353f; border-radius: 6px; font-size: 14px; text-align: center; outline: none; background: #1e1e26; color: #e8e8f0; }
     .markup-row input:focus { border-color: #E53238; }
-
-    /* product results table */
     .prod-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .prod-table th {
-      text-align: left; font-size: 11px; font-weight: 600; color: #6e6e82;
-      text-transform: uppercase; letter-spacing: 0.05em;
-      padding: 8px 10px; border-bottom: 1px solid #2e2e38;
-    }
+    .prod-table th { text-align: left; font-size: 11px; font-weight: 600; color: #6e6e82; text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 10px; border-bottom: 1px solid #2e2e38; }
     .prod-table td { padding: 10px 10px; border-bottom: 1px solid #2a2a32; vertical-align: middle; }
     .prod-table tr:last-child td { border-bottom: none; }
     .prod-table tr:hover td { background: #22222a; }
-    .prod-name { font-weight: 500; color: #e8e8f0; max-width: 280px; }
+    .prod-name { font-weight: 500; }
     .prod-sku { color: #555566; font-size: 12px; }
-    .price-sq { color: #6e6e82; }
-    .price-eb { color: #3ecf8e; font-weight: 600; }
+    .action-cell { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 
-    .list-btn {
-      padding: 6px 14px; color: #fff;
-      border: none; border-radius: 6px; font-size: 12px; font-weight: 500;
-      cursor: pointer; white-space: nowrap;
-    }
+    /* Buttons */
+    .btn-queue { padding: 5px 12px; background: #9b804a22; color: #c4a46a; border: 1.5px solid #9b804a55; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+    .btn-queue:hover { background: #9b804a44; border-color: #9b804a; }
+    .btn-queue.in-queue { background: #9b804a; color: #fff; border-color: #9b804a; cursor: default; }
+    .btn-queue.in-queue:hover { background: #9b804a; }
+    .list-btn { padding: 5px 12px; color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
     .list-btn.unlisted { background: #1D9E75; }
     .list-btn.unlisted:hover { background: #178a63; }
-    .list-btn.listed { background: #E53238; }
-    .list-btn.listed:hover { background: #c42b30; }
-    .list-btn:disabled { background: #333; cursor: not-allowed; }
-    .remove-btn {
-      padding: 6px 12px; background: #24242c; color: #E53238;
-      border: 1.5px solid #E53238; border-radius: 6px; font-size: 12px; font-weight: 500;
-      cursor: pointer; white-space: nowrap;
-    }
-    .remove-btn:hover { background: #2d1f1f; }
-    .sync-price-btn {
-      padding: 6px 12px; background: #2d2510; color: #d4a017;
-      border: 1.5px solid #c49a00; border-radius: 6px; font-size: 12px; font-weight: 600;
-      cursor: pointer; white-space: nowrap;
-    }
+    .list-btn.listed { background: #2a3a30; color: #1D9E75; border: 1.5px solid #1D9E7555; }
+    .list-btn.listed:hover { background: #2a3a30; }
+    .sync-price-btn { padding: 5px 10px; background: #2d2510; color: #d4a017; border: 1.5px solid #c49a00; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
     .sync-price-btn:hover { background: #3a3010; }
-    .sync-price-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .row-mismatch { background: #222015; }
-    .row-mismatch:hover { background: #2a2510 !important; }
-    .price-mismatch { color: #d4a017; font-weight: 600; font-size: 12px; }
-    .action-cell { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-    .sort-row { display: flex; align-items: center; gap: 6px; padding: 8px 0 12px; flex-wrap: wrap; }
-    .sort-label { font-size: 12px; color: #6e6e82; font-weight: 500; margin-right: 2px; }
-    .sort-btn {
-      padding: 4px 12px; background: #2a2a32; color: #a0a0b0;
-      border: 1.5px solid #35353f; border-radius: 20px; font-size: 12px; font-weight: 500;
-      cursor: pointer; transition: all 0.15s;
-    }
-    .sort-btn:hover { background: #eee; border-color: #a0a0b0; }
-    .sort-btn.active { background: #E53238; color: #fff; border-color: #E53238; }
-    .sort-dir-btn {
-      padding: 4px 10px; background: #2a2a32; color: #a0a0b0;
-      border: 1.5px solid #35353f; border-radius: 20px; font-size: 13px; font-weight: 700;
-      cursor: pointer; margin-left: 4px;
-    }
-    .sort-dir-btn:hover { background: #333340; }
-    th.sortable { cursor: pointer; user-select: none; }
-    th.sortable:hover { color: #E53238; }
-    th.sort-active { color: #E53238; }
+    .remove-btn { padding: 5px 10px; background: #24242c; color: #E53238; border: 1.5px solid #E53238; border-radius: 6px; font-size: 12px; cursor: pointer; }
+    .remove-btn:hover { background: #2d1f1f; }
+    .relist-btn { padding: 5px 10px; background: #1D9E75; color: #fff; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; }
+    .relist-btn:hover { background: #178a63; }
 
-    .empty-state { text-align: center; padding: 32px; color: #555566; font-size: 14px; }
-
-    /* ── List modal ── */
-    .modal-overlay {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,0.35); z-index: 200;
-      align-items: center; justify-content: center;
-    }
-    .modal-overlay.open { display: flex; }
-    .modal {
-      background: #24242c; border-radius: 12px; padding: 28px;
-      width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto;
-    }
-    .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 18px; }
-    .form-row { margin-bottom: 14px; }
-    .form-row label { display: block; font-size: 12px; font-weight: 500; color: #a0a0b0; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
-    .form-row input, .form-row textarea, .form-row select {
-      width: 100%; padding: 9px 12px; border: 1.5px solid #35353f;
-      border-radius: 8px; font-size: 14px; outline: none; font-family: inherit;
-    }
-    .form-row input:focus, .form-row textarea:focus, .form-row select:focus { border-color: #E53238; }
-    .form-row textarea { resize: vertical; min-height: 80px; }
-    .form-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
-    .btn-primary {
-      flex: 1; padding: 11px; background: #E53238; color: #fff;
-      border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
-    }
-    .btn-primary:hover { background: #c42b30; }
-    .btn-primary:disabled { background: #6b1f22; cursor: not-allowed; }
-    .btn-cancel {
-      padding: 11px 20px; background: #24242c; color: #a0a0b0;
-      border: 1.5px solid #35353f; border-radius: 8px; font-size: 14px; cursor: pointer;
-    }
-    .btn-cancel:hover { background: #2a2a32; }
-
-    /* ── Recent listings table ── */
-    .listing-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #2e2e38; font-size: 13px; }
-    .listing-row:last-child { border-bottom: none; }
-    .listing-name { flex: 1; font-weight: 500; }
-    .listing-price { color: #3ecf8e; font-weight: 600; min-width: 60px; }
-    .listing-id { color: #555566; font-size: 12px; }
-    .listing-link { color: #E53238; font-size: 12px; text-decoration: none; }
-    .listing-link:hover { text-decoration: underline; }
-
-    /* ── Toast ── */
-    .toast {
-      position: fixed; bottom: 24px; right: 24px;
-      background: #1a1a1a; color: #fff;
-      padding: 12px 18px; border-radius: 8px; font-size: 13px;
-      transform: translateY(80px); opacity: 0;
-      transition: all 0.25s ease; z-index: 999;
-    }
-    .toast.show { transform: translateY(0); opacity: 1; }
-    .toast.success { background: #1D9E75; }
-    .toast.error { background: #c42b30; }
-
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
-    .dot-green { background: #1D9E75; }
-    .dot-red { background: #E53238; }
+    /* Listings table */
     .listings-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .listings-table th { text-align: left; font-size: 11px; font-weight: 600; color: #6e6e82; text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 8px; border-bottom: 1px solid #2e2e38; }
     .listings-table td { padding: 9px 8px; border-bottom: 1px solid #2a2a32; vertical-align: middle; }
     .listings-table tr:last-child td { border-bottom: none; }
     .listings-table tr:hover td { background: #22222a; }
-    .duplicate-badge { font-size: 11px; background: #f59e0b; color: #fff; padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: 500; }
-    .page-btn { padding: 5px 12px; border: 1.5px solid #35353f; background: #24242c; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .duplicate-badge { font-size: 11px; background: #f59e0b; color: #fff; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+    .page-btn { padding: 5px 12px; border: 1.5px solid #35353f; background: #24242c; border-radius: 6px; cursor: pointer; font-size: 13px; color: #c8c8d8; }
     .page-btn.active { background: #E53238; color: #fff; border-color: #E53238; }
     .page-btn:hover:not(.active) { background: #2a2a32; }
-    .relist-btn {
-      padding: 6px 12px; background: #1D9E75; color: #fff;
-      border: none; border-radius: 6px; font-size: 12px; font-weight: 500;
-      cursor: pointer; white-space: nowrap;
-    }
-    .relist-btn:hover { background: #178a63; }
-    .relist-btn:disabled { background: #ccc; cursor: not-allowed; }
-    .ended-badge {
-      font-size: 11px; background: #f59e0b; color: #fff;
-      padding: 2px 7px; border-radius: 10px; font-weight: 500;
-    }
-    .ended-date { font-size: 11px; color: #555566; }
+    .sort-row { display: flex; align-items: center; gap: 6px; padding: 8px 0 12px; flex-wrap: wrap; }
+    .sort-label { font-size: 12px; color: #6e6e82; font-weight: 500; margin-right: 2px; }
+    .sort-btn { padding: 4px 12px; background: #2a2a32; color: #a0a0b0; border: 1.5px solid #35353f; border-radius: 20px; font-size: 12px; cursor: pointer; }
+    .sort-btn.active { background: #E53238; color: #fff; border-color: #E53238; }
+    .sort-dir-btn { padding: 4px 10px; background: #2a2a32; color: #a0a0b0; border: 1.5px solid #35353f; border-radius: 20px; font-size: 13px; cursor: pointer; margin-left: 4px; }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sort-active { color: #E53238; }
+    .ended-badge { font-size: 11px; background: #f59e0b; color: #fff; padding: 2px 7px; border-radius: 10px; }
+    .row-mismatch { background: #222015; }
+    .price-mismatch { color: #d4a017; font-weight: 600; font-size: 12px; }
 
-    /* ── Tabs ── */
-    .tab-bar {
-      display: flex; gap: 2px; padding: 0 24px;
-      background: #24242c; border-bottom: 1px solid #35353f;
-    }
-    .tab-btn {
-      padding: 11px 20px; font-size: 13px; font-weight: 500;
-      color: #6e6e82; border: none; background: none; cursor: pointer;
-      border-bottom: 2px solid transparent; margin-bottom: -1px;
-      transition: color 0.15s; white-space: nowrap;
-    }
-    .tab-btn:hover { color: #e8e8f0; }
-    .tab-btn.active { color: #E53238; border-bottom-color: #E53238; }
-    .tab-badge {
-      display: inline-block; background: #f59e0b; color: #fff;
-      font-size: 10px; font-weight: 700; padding: 1px 5px;
-      border-radius: 8px; margin-left: 5px; vertical-align: middle;
-    }
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
+    /* Bulk revise panel */
+    .bulk-revise-panel { background: #1e1e28; border: 1px solid #9b804a; border-radius: 10px; padding: 16px 18px; margin-bottom: 20px; display: none; }
 
-    input, textarea, select {
-      background: #1e1e26 !important;
-      color: #e8e8f0 !important;
-      border-color: #35353f !important;
-    }
+    /* Toast */
+    .toast { position: fixed; bottom: 24px; right: 24px; background: #1a1a1a; color: #fff; padding: 12px 18px; border-radius: 8px; font-size: 13px; transform: translateY(80px); opacity: 0; transition: all 0.25s ease; z-index: 999; }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { background: #1D9E75; }
+    .toast.error { background: #c42b30; }
+
+    .empty-state { text-align: center; padding: 32px; color: #555566; font-size: 14px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+    .dot-green-s { background: #1D9E75; }
+
+    input, textarea, select { background: #1e1e26 !important; color: #e8e8f0 !important; border-color: #35353f !important; }
     input::placeholder, textarea::placeholder { color: #555566 !important; }
-    input:focus, textarea:focus, select:focus { border-color: #E53238 !important; }
+    input:focus, textarea:focus, select:focus { border-color: #E53238 !important; outline: none; }
     option { background: #1e1e26; color: #e8e8f0; }
+
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: #24242c; border-radius: 12px; padding: 28px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+    .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 18px; }
+    .form-row { margin-bottom: 14px; }
+    .form-row label { display: block; font-size: 12px; font-weight: 500; color: #a0a0b0; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .form-row input, .form-row textarea, .form-row select { width: 100%; padding: 9px 12px; border: 1.5px solid #35353f; border-radius: 8px; font-size: 14px; font-family: inherit; }
+    .form-row textarea { resize: vertical; min-height: 80px; }
+    .form-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .btn-primary { flex: 1; padding: 11px; background: #E53238; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; }
+    .btn-primary:hover { background: #c42b30; }
+    .btn-primary:disabled { background: #6b1f22; cursor: not-allowed; }
+    .btn-cancel { padding: 11px 20px; background: #24242c; color: #a0a0b0; border: 1.5px solid #35353f; border-radius: 8px; font-size: 14px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -269,8 +230,8 @@
 <!-- Login -->
 <div id="login-screen">
   <div class="login-box">
-    <h1>eBay Lister</h1>
-    <p>Enter your dashboard password to continue</p>
+    <h1>Grain Mill Co-op</h1>
+    <p>eBay Automation Dashboard</p>
     <input type="password" id="pwd-input" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()" />
     <button onclick="doLogin()">Sign In</button>
     <p class="login-err" id="login-err"></p>
@@ -282,205 +243,175 @@
   <header>
     <div class="logo">
       <span class="logo-badge">eBay</span>
-      <h1>Square → eBay Lister</h1>
+      <h1>Grain Mill Co-op · eBay Lister</h1>
     </div>
     <div class="header-actions">
-      <button class="sync-btn" onclick="syncOrders()" id="sync-btn">↻ Sync eBay Orders</button>
-      <button class="sync-btn" onclick="syncSellability()" id="sellability-btn">✕ Remove Unsellable</button>
-      <button class="sync-btn" onclick="syncRelist()" id="relist-check-btn">↺ Check Relist</button>
-      <span style="font-size:13px;color:#6e6e82;">
-        <span class="status-dot dot-green" id="sq-dot"></span>Square
-        &nbsp;
-        <span class="status-dot dot-green" id="eb-dot"></span>eBay
+      <button class="sync-btn" onclick="syncOrders()" id="sync-btn">↻ Sync Orders</button>
+      <button class="sync-btn" onclick="syncSellability()" id="sellability-btn">✕ Unsellable</button>
+      <button class="sync-btn" onclick="syncRelist()" id="relist-check-btn">↺ Relist Check</button>
+      <button class="sync-btn" id="bulk-revise-btn" onclick="startBulkRevise()" style="border-color:#9b804a;color:#c4a46a;">✦ Bulk Revise</button>
+      <span style="font-size:12px;color:#6e6e82;">
+        <span class="status-dot dot-green-s"></span>Live
       </span>
     </div>
   </header>
 
-  <!-- Tab bar -->
   <div class="tab-bar">
-    <button class="tab-btn active" onclick="switchTab('search')">Search &amp; List</button>
-    <button class="tab-btn" onclick="switchTab('active')" id="tab-active-btn">Active Listings</button>
-    <button class="tab-btn" onclick="switchTab('ended')" id="tab-ended-btn">Ended Listings</button>
+    <button class="tab-btn active" id="tab-btn-queue" onclick="switchTab('queue')">
+      ✦ Approval Queue <span class="tab-badge green" id="queue-badge" style="display:none;">0</span>
+    </button>
+    <button class="tab-btn" id="tab-btn-search" onclick="switchTab('search')">Search &amp; Add</button>
+    <button class="tab-btn" id="tab-btn-active" onclick="switchTab('active')">Active Listings</button>
+    <button class="tab-btn" id="tab-btn-ended" onclick="switchTab('ended')">Ended Listings</button>
   </div>
 
   <main>
+    <!-- Stats -->
     <div class="stats">
-      <div class="stat-card"><p>Listed Today</p><p id="stat-listed">—</p></div>
-      <div class="stat-card"><p>Orders Synced</p><p id="stat-orders">—</p></div>
-      <div class="stat-card"><p>Active Markup</p><p id="stat-markup">10%</p></div>
+      <div class="stat-card"><p>Queue Ready</p><p id="stat-queue-ready" style="color:#1D9E75;">—</p></div>
+      <div class="stat-card"><p>Active Listings</p><p id="stat-listed">—</p></div>
+      <div class="stat-card"><p>Orders Synced</p><p id="stat-orders">0</p></div>
+      <div class="stat-card"><p>Markup</p><p id="stat-markup" style="color:#9b804a;">10%</p></div>
     </div>
 
-    <!-- Search & List -->
-    <div class="tab-panel active" id="tab-search">
-    <div class="panel">
-      <div class="panel-header">
-        <h2>Search Square Catalog &amp; List on eBay</h2>
-        <div class="markup-row">
-          Markup:
-          <input type="number" id="markup-input" value="10" min="0" max="200" step="1" oninput="updateMarkupStat()" />
-          %
-        </div>
+    <!-- Bulk Revise Panel -->
+    <div class="bulk-revise-panel" id="bulk-revise-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-size:14px;font-weight:600;color:#c4a46a;">✦ Bulk Revise Progress</div>
+        <div id="bulk-revise-summary" style="font-size:12px;color:#6e6e82;"></div>
       </div>
-      <div class="panel-body">
-        <div class="search-row">
-          <input type="text" id="search-input" placeholder="Search products by name or SKU…" oninput="handleSearch()" autocomplete="off" />
+      <div style="background:#2a2a32;border-radius:6px;height:6px;margin-bottom:12px;overflow:hidden;">
+        <div id="bulk-revise-bar" style="height:100%;background:#9b804a;width:0%;transition:width 0.3s;border-radius:6px;"></div>
+      </div>
+      <div id="bulk-revise-log" style="max-height:180px;overflow-y:auto;font-size:12px;font-family:monospace;display:flex;flex-direction:column;gap:3px;"></div>
+    </div>
+
+    <!-- ── QUEUE TAB ── -->
+    <div class="tab-panel active" id="tab-queue">
+      <div id="queue-view"></div>
+    </div>
+
+    <!-- ── SEARCH TAB ── -->
+    <div class="tab-panel" id="tab-search">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Search Square Catalog</h2>
+          <div class="markup-row">
+            Markup: <input type="number" id="markup-input" value="10" min="0" max="200" step="1" oninput="updateMarkupStat()" /> %
+          </div>
         </div>
-        <div class="sort-row" id="sort-controls" style="display:none;">
-          <span class="sort-label">Sort by:</span>
-          <button class="sort-btn active" data-sort="name" onclick="setSort('name')">Product</button>
-          <button class="sort-btn" data-sort="sku" onclick="setSort('sku')">SKU</button>
-          <button class="sort-dir-btn" id="sort-dir-btn" onclick="toggleSortDir()" title="Toggle sort direction">↑</button>
-        </div>
-        <div id="search-results">
-          <div class="empty-state">Type to search your Square catalog</div>
+        <div class="panel-body">
+          <div class="search-row">
+            <input type="text" id="search-input" placeholder="Search products by name or SKU…" oninput="handleSearch()" autocomplete="off" />
+          </div>
+          <div class="sort-row" id="sort-controls" style="display:none;">
+            <span class="sort-label">Sort:</span>
+            <button class="sort-btn active" data-sort="name" onclick="setSort('name')">Product</button>
+            <button class="sort-btn" data-sort="sku" onclick="setSort('sku')">SKU</button>
+            <button class="sort-dir-btn" id="sort-dir-btn" onclick="toggleSortDir()">↑</button>
+          </div>
+          <div id="search-results"><div class="empty-state">Type to search your Square catalog</div></div>
         </div>
       </div>
     </div>
-    </div><!-- /tab-search -->
 
-    <!-- Active eBay listings -->
+    <!-- ── ACTIVE LISTINGS TAB ── -->
     <div class="tab-panel" id="tab-active">
-    <div class="panel">
-      <div class="panel-header">
-        <h2>Active eBay Listings</h2>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span id="listing-count" style="font-size:13px;color:#6e6e82;"></span>
-          <button class="sync-btn" onclick="loadEbayListings()" id="refresh-listings-btn">↻ Refresh</button>
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Active eBay Listings</h2>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="listing-count" style="font-size:13px;color:#6e6e82;"></span>
+            <button class="sync-btn" onclick="loadEbayListings()" id="refresh-listings-btn">↻ Refresh</button>
+          </div>
         </div>
-      </div>
-      <div class="panel-body">
-        <div class="sort-row" style="margin-bottom:8px;">
-          <span class="sort-label">Sort by:</span>
-          <button class="sort-btn" data-lsort="title" onclick="setListingSort('title')">Title</button>
-          <button class="sort-btn active" data-lsort="sku" onclick="setListingSort('sku')">SKU</button>
-          <button class="sort-dir-btn" id="listing-sort-dir" onclick="toggleListingSortDir()" title="Toggle direction">↑</button>
+        <div class="panel-body">
+          <div class="sort-row">
+            <span class="sort-label">Sort:</span>
+            <button class="sort-btn" data-lsort="title" onclick="setListingSort('title')">Title</button>
+            <button class="sort-btn active" data-lsort="sku" onclick="setListingSort('sku')">SKU</button>
+            <button class="sort-dir-btn" id="listing-sort-dir" onclick="toggleListingSortDir()">↑</button>
+          </div>
+          <input type="text" id="listing-search" placeholder="Filter listings…" oninput="filterListings()" style="width:100%;margin-bottom:12px;font-size:13px;padding:7px 10px;border:1.5px solid #35353f;border-radius:7px;" />
+          <div id="ebay-listings"><div class="empty-state">Loading…</div></div>
+          <div id="listing-pages" style="display:flex;gap:8px;margin-top:12px;justify-content:center;"></div>
         </div>
-        <input type="text" id="listing-search" placeholder="Filter listings…" oninput="filterListings()" style="width:100%;margin-bottom:12px;font-size:13px;padding:7px 10px;border:1.5px solid #35353f;border-radius:7px;outline:none;background:#1e1e26;color:#e8e8f0;" />
-        <div id="ebay-listings"><div class="empty-state">Loading your eBay listings…</div></div>
-        <div id="listing-pages" style="display:flex;gap:8px;margin-top:12px;justify-content:center;"></div>
       </div>
     </div>
-    </div><!-- /tab-active -->
 
-    <!-- Ended Listings (awaiting relist) -->
+    <!-- ── ENDED LISTINGS TAB ── -->
     <div class="tab-panel" id="tab-ended">
-    <div class="panel">
-      <div class="panel-header">
-        <h2>Ended Listings</h2>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span style="font-size:12px;color:#888;">Items ended due to sellable=N · auto-relisted when back in stock</span>
-          <button class="sync-btn" onclick="loadEndedListings()" id="refresh-ended-btn">↻ Refresh</button>
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Ended Listings</h2>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:12px;color:#888;">Auto-relisted when back in stock</span>
+            <button class="sync-btn" onclick="loadEndedListings()" id="refresh-ended-btn">↻ Refresh</button>
+          </div>
         </div>
-      </div>
-      <div class="panel-body">
-        <div class="sort-row" style="margin-bottom:8px;">
-          <span class="sort-label">Sort by:</span>
-          <button class="sort-btn active" data-esort="endedAt" onclick="setEndedSort('endedAt')">Date Ended</button>
-          <button class="sort-btn" data-esort="title" onclick="setEndedSort('title')">Title</button>
-          <button class="sort-btn" data-esort="sku" onclick="setEndedSort('sku')">SKU</button>
-          <button class="sort-dir-btn" id="ended-sort-dir" onclick="toggleEndedSortDir()">↓</button>
+        <div class="panel-body">
+          <div class="sort-row">
+            <span class="sort-label">Sort:</span>
+            <button class="sort-btn active" data-esort="endedAt" onclick="setEndedSort('endedAt')">Date Ended</button>
+            <button class="sort-btn" data-esort="title" onclick="setEndedSort('title')">Title</button>
+            <button class="sort-btn" data-esort="sku" onclick="setEndedSort('sku')">SKU</button>
+            <button class="sort-dir-btn" id="ended-sort-dir" onclick="toggleEndedSortDir()">↓</button>
+          </div>
+          <input type="text" id="ended-search" placeholder="Filter…" oninput="filterEndedListings()" style="width:100%;margin-bottom:12px;font-size:13px;padding:7px 10px;border:1.5px solid #35353f;border-radius:7px;" />
+          <div id="ended-listings"><div class="empty-state">Loading…</div></div>
         </div>
-        <input type="text" id="ended-search" placeholder="Filter ended listings…" oninput="filterEndedListings()" style="width:100%;margin-bottom:12px;font-size:13px;padding:7px 10px;border:1.5px solid #35353f;border-radius:7px;outline:none;background:#1e1e26;color:#e8e8f0;" />
-        <div id="ended-listings"><div class="empty-state">Loading…</div></div>
       </div>
     </div>
-    </div><!-- /tab-ended -->
+
   </main>
 </div>
 
-<!-- List Modal -->
+<!-- Direct List Modal (from Search tab) -->
 <div class="modal-overlay" id="modal">
   <div class="modal">
     <h3>List on eBay</h3>
-    <!-- Autofill status -->
     <div id="autofill-status" style="font-size:12px;color:#888;margin-bottom:12px;min-height:16px;"></div>
-
-    <!-- Photo preview -->
-    <div id="m-photo-wrap" style="display:none;margin-bottom:14px;">
-      <img id="m-photo" src="" alt="Product photo" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #eee;" />
-      <span style="font-size:12px;color:#1D9E75;margin-left:10px;">✓ Photo from Square</span>
+    <div id="m-photo-wrap" style="display:none;margin-bottom:14px;align-items:center;gap:10px;">
+      <img id="m-photo" src="" alt="" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #35353f;" />
+      <span style="font-size:12px;color:#1D9E75;">✓ Photo from Square</span>
     </div>
-
     <div class="form-row">
       <label>Title (max 80 chars)</label>
       <input type="text" id="m-title" maxlength="80" />
       <div style="font-size:11px;color:#555566;margin-top:3px;" id="m-title-count">0/80</div>
     </div>
     <div class="form-row">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-        <label style="margin-bottom:0;">Description</label>
-        <div style="display:flex;gap:0;border:1px solid #35353f;border-radius:6px;overflow:hidden;">
-          <button id="desc-tab-preview" onclick="setDescTab('preview')" style="padding:3px 10px;font-size:11px;background:#E53238;color:#fff;border:none;cursor:pointer;">Preview</button>
-          <button id="desc-tab-edit" onclick="setDescTab('edit')" style="padding:3px 10px;font-size:11px;background:#2a2a32;color:#a0a0b0;border:none;cursor:pointer;">Edit HTML</button>
-        </div>
+      <label>Description (HTML preview)</label>
+      <div id="desc-preview-wrap" style="border:1px solid #35353f;border-radius:6px;overflow:auto;max-height:260px;background:#f2ede3;padding:10px;">
+        <div id="desc-preview-inner" style="pointer-events:none;transform:scale(0.65);transform-origin:top left;width:154%;"></div>
       </div>
-      <div id="desc-preview-wrap" style="border:1px solid #35353f;border-radius:6px;overflow:auto;max-height:340px;background:#f2ede3;padding:12px;">
-        <div id="desc-preview-inner" style="pointer-events:none;transform:scale(0.7);transform-origin:top left;width:143%;"></div>
-      </div>
-      <textarea id="m-desc" style="display:none;height:180px;font-size:11px;font-family:monospace;"></textarea>
       <div id="desc-gen-status" style="font-size:12px;color:#888;margin-top:4px;min-height:16px;"></div>
     </div>
     <div class="form-two">
-      <div class="form-row">
-        <label>Brand <span style="color:#c42b30;">*</span></label>
-        <input type="text" id="m-brand" placeholder="e.g. Prairie Gold" />
-      </div>
-      <div class="form-row">
-        <label>Type <span style="color:#c42b30;">*</span></label>
-        <input type="text" id="m-type" placeholder="e.g. Hard White Wheat" />
-      </div>
+      <div class="form-row"><label>Brand *</label><input type="text" id="m-brand" /></div>
+      <div class="form-row"><label>Type *</label><input type="text" id="m-type" /></div>
     </div>
     <div class="form-two">
-      <div class="form-row">
-        <label>eBay Price ($)</label>
-        <input type="number" id="m-price" step="0.01" min="0.99" />
-      </div>
-      <div class="form-row">
-        <label>Quantity</label>
-        <input type="number" id="m-qty" value="5" min="1" />
-      </div>
+      <div class="form-row"><label>eBay Price ($)</label><input type="number" id="m-price" step="0.01" min="0.99" /></div>
+      <div class="form-row"><label>Quantity</label><input type="number" id="m-qty" value="5" min="1" /></div>
     </div>
     <div class="form-two">
       <div class="form-row">
         <label>eBay Category ID</label>
-        <input type="text" id="m-cat" placeholder="e.g. 177762" value="177762" />
+        <input type="text" id="m-cat" value="177762" />
+        <div style="font-size:11px;color:#9b804a;margin-top:3px;" id="category-rationale"></div>
       </div>
-      <div class="form-row">
-        <label>Condition</label>
+      <div class="form-row"><label>Condition</label>
         <select id="m-cond">
           <option value="1000">New</option>
           <option value="1500">New other</option>
-          <option value="2000">Manufacturer refurbished</option>
-          <option value="2500">Seller refurbished</option>
           <option value="3000">Used</option>
         </select>
       </div>
     </div>
     <div class="form-two">
-      <div class="form-row">
-        <label>SKU</label>
-        <input type="text" id="m-sku" />
-      </div>
-      <div class="form-row">
-        <label>Weight (lbs) <span style="color:#c42b30;">*</span></label>
-        <input type="number" id="m-weight" step="0.01" min="0.01" placeholder="e.g. 50.4" />
-      </div>
-    </div>
-    <div class="form-row">
-      <label>Package Dimensions (inches) L × W × H</label>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <input type="number" id="m-depth" step="1" min="1" placeholder="L" style="width:70px;" />
-        <span style="color:#555566;">×</span>
-        <input type="number" id="m-width" step="1" min="1" placeholder="W" style="width:70px;" />
-        <span style="color:#555566;">×</span>
-        <input type="number" id="m-height" step="1" min="1" placeholder="H" style="width:70px;" />
-      </div>
-      <div style="font-size:11px;color:#555566;margin-top:3px;">Required by UPS for packages over 3 cubic feet</div>
-    </div>
-
-    <div style="font-size:12px;color:#888;margin-top:4px;">
-      Need the right category ID? Find it at
-      <a href="https://www.ebay.com/sch/allcategories/all-categories" target="_blank" style="color:#E53238;">ebay.com/sch/allcategories</a>
+      <div class="form-row"><label>SKU</label><input type="text" id="m-sku" /></div>
+      <div class="form-row"><label>Weight (lbs) *</label><input type="number" id="m-weight" step="0.01" min="0.01" /></div>
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
@@ -496,26 +427,26 @@
   let PASSWORD = '';
   let searchTimeout = null;
   let currentProduct = null;
-  let listedCount = 0;
-  let ordersCount = 0;
   let allEbayListings = [];
-  let listingSort = 'sku';
-  let listingSortAsc = true;
+  let listingSort = 'sku', listingSortAsc = true;
   let listedSkus = new Set();
   let currentListingPage = 1;
   let allEndedListings = [];
-  let endedSort = 'endedAt';
-  let endedSortAsc = false;
+  let endedSort = 'endedAt', endedSortAsc = false;
+  let lastSearchItems = [], currentSort = 'name', sortAsc = true;
+  let queueItems = [];
+  let currentQueueId = null;
+  let queuePollTimer = null;
 
   // ── Tabs ──────────────────────────────────────────────────────────────────
   function switchTab(name) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('tab-' + name).classList.add('active');
-    // Find matching tab button by its onclick
-    document.querySelectorAll('.tab-btn').forEach(b => {
-      if (b.getAttribute('onclick') === "switchTab('" + name + "')") b.classList.add('active');
-    });
+    document.getElementById('tab-btn-' + name).classList.add('active');
+    if (name === 'active') loadEbayListings();
+    if (name === 'ended') loadEndedListings();
+    if (name === 'queue') renderQueueView();
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -523,7 +454,6 @@
     const pwd = document.getElementById('pwd-input').value.trim();
     if (!pwd) return;
     PASSWORD = pwd;
-    // Test with a real API call
     fetch('/api/square/products?q=test', { headers: { 'x-dashboard-password': pwd } })
       .then(r => {
         if (r.status === 401) {
@@ -532,13 +462,365 @@
         } else {
           document.getElementById('login-screen').style.display = 'none';
           document.getElementById('app').style.display = 'block';
+          loadQueue();
           loadEbayListings();
           loadEndedListings();
         }
-      })
-      .catch(() => {
-        document.getElementById('login-err').textContent = 'Could not connect to server.';
+      }).catch(() => { document.getElementById('login-err').textContent = 'Could not connect to server.'; });
+  }
+
+  // ── Queue ─────────────────────────────────────────────────────────────────
+  async function loadQueue() {
+    try {
+      const res = await fetch('/api/queue', { headers: { 'x-dashboard-password': PASSWORD } });
+      queueItems = await res.json();
+      updateQueueBadge();
+      renderQueueView();
+      // Poll if any items are still processing
+      const processing = queueItems.filter(i => i.status === 'processing');
+      if (processing.length) {
+        clearTimeout(queuePollTimer);
+        queuePollTimer = setTimeout(loadQueue, 3000);
+      }
+    } catch(e) { console.error('loadQueue error:', e); }
+  }
+
+  function updateQueueBadge() {
+    const ready = queueItems.filter(i => i.status === 'ready').length;
+    const processing = queueItems.filter(i => i.status === 'processing').length;
+    const badge = document.getElementById('queue-badge');
+    const statEl = document.getElementById('stat-queue-ready');
+    if (ready > 0) {
+      badge.textContent = ready;
+      badge.style.display = 'inline-block';
+      badge.style.background = '#1D9E75';
+    } else if (processing > 0) {
+      badge.textContent = processing + ' processing';
+      badge.style.display = 'inline-block';
+      badge.style.background = '#9b804a';
+    } else {
+      badge.style.display = 'none';
+    }
+    statEl.textContent = ready;
+  }
+
+  async function addToQueue(product) {
+    try {
+      const res = await fetch('/api/queue/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+        body: JSON.stringify({ product })
       });
+      const data = await res.json();
+      if (data.error) {
+        if (res.status === 409) { showToast('Already in queue', 'error'); return; }
+        showToast('Error: ' + data.error, 'error'); return;
+      }
+      showToast('Added to queue — AI processing started', 'success');
+      loadQueue();
+      // Switch to queue tab
+      switchTab('queue');
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  }
+
+  function renderQueueView() {
+    const el = document.getElementById('queue-view');
+    const active = queueItems.filter(i => !['approved'].includes(i.status));
+
+    if (!active.length) {
+      el.innerHTML = `<div class="queue-empty">
+        <div class="queue-empty-icon">✦</div>
+        <h3>Queue is empty</h3>
+        <p>Search for products in the <strong>Search & Add</strong> tab and click<br>
+        <strong>+ Add to Queue</strong> to start the approval workflow.</p>
+      </div>`;
+      return;
+    }
+
+    // If no current item selected, pick the first ready one, then first overall
+    if (!currentQueueId || !active.find(i => i.id === currentQueueId)) {
+      const firstReady = active.find(i => i.status === 'ready');
+      currentQueueId = (firstReady || active[0]).id;
+    }
+
+    const current = active.find(i => i.id === currentQueueId) || active[0];
+
+    el.innerHTML = `
+      <div class="queue-layout">
+        <div class="queue-sidebar">
+          <div class="queue-sidebar-header">In Queue (${active.length})</div>
+          ${active.map(item => {
+            const dotClass = 'dot-' + item.status;
+            const isActive = item.id === current.id;
+            return `<div class="queue-sidebar-item ${isActive ? 'active ' + item.status : ''}" onclick="selectQueueItem('${item.id}')">
+              <div class="queue-item-dot ${dotClass}"></div>
+              <div>
+                <div class="queue-item-name">${esc(item.product.name)}</div>
+                <div class="queue-item-sku">${esc(item.product.sku || '—')}</div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div id="queue-card-area">${renderQueueCard(current)}</div>
+      </div>`;
+  }
+
+  function selectQueueItem(id) {
+    currentQueueId = id;
+    renderQueueView();
+  }
+
+  function renderQueueCard(item) {
+    if (item.status === 'processing') {
+      return `<div class="queue-card">
+        <div class="queue-card-header">
+          ${item.product.imageUrl
+            ? `<img class="queue-card-photo" src="${esc(item.product.imageUrl)}" />`
+            : `<div class="queue-card-photo-empty">📦</div>`}
+          <div class="queue-card-meta">
+            <div class="queue-card-name">${esc(item.product.name)}</div>
+            <div class="queue-card-sku">SKU: ${esc(item.product.sku || '—')}</div>
+            <span class="queue-card-badge badge-processing">⏳ AI Processing…</span>
+          </div>
+        </div>
+        <div class="queue-processing">
+          <div class="spinner"></div>
+          <div style="font-size:13px;color:#9b804a;">Claude is analyzing this product —<br>generating title suggestions, description, and category…</div>
+        </div>
+        <div class="queue-actions">
+          <button class="btn-remove" onclick="removeFromQueue('${item.id}')">✕ Remove</button>
+        </div>
+      </div>`;
+    }
+
+    if (item.status === 'error') {
+      return `<div class="queue-card">
+        <div class="queue-card-header">
+          <div class="queue-card-photo-empty">⚠️</div>
+          <div class="queue-card-meta">
+            <div class="queue-card-name">${esc(item.product.name)}</div>
+            <div class="queue-card-sku">SKU: ${esc(item.product.sku || '—')}</div>
+            <span class="queue-card-badge badge-error">Error</span>
+          </div>
+        </div>
+        <div style="background:#2e1a1a;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;color:#c42b30;">
+          ${esc(item.error || 'AI processing failed')}
+        </div>
+        <div class="queue-actions">
+          <button class="btn-approve" onclick="retryQueueItem('${item.id}')">↺ Retry</button>
+          <button class="btn-remove" onclick="removeFromQueue('${item.id}')">✕ Remove</button>
+        </div>
+      </div>`;
+    }
+
+    if (item.status === 'skipped') {
+      return `<div class="queue-card">
+        <div class="queue-card-header">
+          <div class="queue-card-photo-empty">⏭</div>
+          <div class="queue-card-meta">
+            <div class="queue-card-name">${esc(item.product.name)}</div>
+            <div class="queue-card-sku">SKU: ${esc(item.product.sku || '—')}</div>
+            <span class="queue-card-badge" style="background:#2a2a3a;color:#6e6e82;border:1px solid #35353f;">Skipped</span>
+          </div>
+        </div>
+        <div class="queue-actions">
+          <button class="btn-approve" onclick="restoreQueueItem('${item.id}')">↺ Move Back to Ready</button>
+          <button class="btn-remove" onclick="removeFromQueue('${item.id}')">✕ Remove</button>
+        </div>
+      </div>`;
+    }
+
+    // ── READY card ──
+    const ai = item.ai || {};
+    const titles = ai.titles || [];
+    const selectedTitle = ai.selectedTitle || item.product.name.substring(0,80);
+
+    const titleOptions = titles.map((t, i) => {
+      const charClass = t.chars >= 70 ? 'good' : 'warn';
+      const checked = t.title === selectedTitle ? 'checked' : '';
+      return `<label class="title-option ${checked ? 'selected' : ''}" onclick="selectTitle('${item.id}', ${i})">
+        <input type="radio" name="title_${item.id}" value="${i}" ${checked} />
+        <div class="title-option-text">
+          <div class="title-option-str">${esc(t.title)}</div>
+          <div class="title-option-meta">
+            <span class="title-option-chars ${charClass}">${t.chars}/80</span>
+            <span>${esc(t.rationale)}</span>
+          </div>
+        </div>
+      </label>`;
+    }).join('');
+
+    return `<div class="queue-card" id="card-${item.id}">
+      <div class="queue-card-header">
+        ${item.product.imageUrl
+          ? `<img class="queue-card-photo" src="${esc(item.product.imageUrl)}" />`
+          : `<div class="queue-card-photo-empty">📦</div>`}
+        <div class="queue-card-meta">
+          <div class="queue-card-name">${esc(item.product.name)}</div>
+          <div class="queue-card-sku">SKU: ${esc(item.product.sku || '—')} · Square: $${(item.product.squarePrice||0).toFixed(2)}</div>
+          <span class="queue-card-badge badge-ready">✓ Ready to approve</span>
+        </div>
+      </div>
+
+      <!-- Title picker -->
+      <div class="title-picker">
+        <div class="title-picker-label">Choose a Title</div>
+        ${titleOptions}
+        <div class="title-custom-row">
+          <input type="text" id="custom-title-${item.id}" placeholder="Or type a custom title…" maxlength="80"
+            value="${esc(selectedTitle)}"
+            oninput="onCustomTitle('${item.id}', this.value)" />
+          <div class="title-char-count" id="title-chars-${item.id}">${selectedTitle.length}/80</div>
+        </div>
+      </div>
+
+      <!-- Fields grid -->
+      <div class="field-grid">
+        <div class="field-item">
+          <label>eBay Price ($)</label>
+          <input type="number" id="q-price-${item.id}" value="${(item.product.ebayPrice||0).toFixed(2)}" step="0.01" min="0.99" />
+        </div>
+        <div class="field-item">
+          <label>Weight (lbs)</label>
+          <input type="number" id="q-weight-${item.id}" value="${ai.weight || item.product.weight || ''}" step="0.01" min="0.01" />
+        </div>
+        <div class="field-item">
+          <label>Category ID</label>
+          <input type="text" id="q-cat-${item.id}" value="${esc(ai.categoryId || '79631')}" />
+          ${ai.categoryRationale ? `<div class="field-hint">→ ${esc(ai.categoryRationale)}</div>` : ''}
+        </div>
+        <div class="field-item">
+          <label>Quantity</label>
+          <input type="number" id="q-qty-${item.id}" value="5" min="1" />
+        </div>
+        <div class="field-item">
+          <label>Brand</label>
+          <input type="text" id="q-brand-${item.id}" value="${esc(ai.brand || 'Unbranded')}" />
+        </div>
+        <div class="field-item">
+          <label>Type</label>
+          <input type="text" id="q-type-${item.id}" value="${esc(ai.type || '')}" />
+        </div>
+      </div>
+
+      <!-- Description preview -->
+      <div style="font-size:11px;font-weight:600;color:#6e6e82;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Description Preview</div>
+      <div class="desc-preview-wrap">
+        <div class="desc-preview-container">
+          <div class="desc-preview-inner">${ai.descriptionHtml || ''}</div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="queue-actions">
+        <button class="btn-approve" id="approve-btn-${item.id}" onclick="approveQueueItem('${item.id}')">✓ Approve &amp; List on eBay</button>
+        <button class="btn-skip" onclick="skipQueueItem('${item.id}')">Skip</button>
+        <button class="btn-remove" onclick="removeFromQueue('${item.id}')">✕</button>
+      </div>
+      <div id="approve-err-${item.id}" style="font-size:13px;color:#c42b30;margin-top:8px;"></div>
+    </div>`;
+  }
+
+  function selectTitle(itemId, idx) {
+    const item = queueItems.find(i => i.id === itemId);
+    if (!item || !item.ai) return;
+    const t = item.ai.titles[idx];
+    if (!t) return;
+    item.ai.selectedTitle = t.title;
+    // Update custom input
+    const custom = document.getElementById('custom-title-' + itemId);
+    if (custom) { custom.value = t.title; updateTitleChars(itemId, t.title); }
+    // Update visual selection
+    document.querySelectorAll(`[name="title_${itemId}"]`).forEach((r, i) => {
+      r.closest('.title-option').classList.toggle('selected', i === idx);
+    });
+  }
+
+  function onCustomTitle(itemId, val) {
+    const item = queueItems.find(i => i.id === itemId);
+    if (item && item.ai) item.ai.selectedTitle = val;
+    updateTitleChars(itemId, val);
+    // Deselect radio buttons
+    document.querySelectorAll(`[name="title_${itemId}"]`).forEach(r => {
+      r.closest('.title-option').classList.remove('selected');
+    });
+  }
+
+  function updateTitleChars(itemId, val) {
+    const el = document.getElementById('title-chars-' + itemId);
+    if (el) { el.textContent = val.length + '/80'; el.style.color = val.length >= 70 ? '#1D9E75' : '#555566'; }
+  }
+
+  async function approveQueueItem(id) {
+    const item = queueItems.find(i => i.id === id);
+    if (!item) return;
+    const btn = document.getElementById('approve-btn-' + id);
+    const errEl = document.getElementById('approve-err-' + id);
+    btn.disabled = true; btn.textContent = 'Listing…';
+    errEl.textContent = '';
+
+    const customInput = document.getElementById('custom-title-' + id);
+    const selectedTitle = customInput?.value.trim() || item.ai?.selectedTitle || item.product.name.substring(0,80);
+
+    try {
+      const res = await fetch('/api/queue/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+        body: JSON.stringify({
+          id,
+          selectedTitle,
+          categoryId: document.getElementById('q-cat-' + id)?.value,
+          brand: document.getElementById('q-brand-' + id)?.value,
+          type: document.getElementById('q-type-' + id)?.value,
+          weight: document.getElementById('q-weight-' + id)?.value,
+          price: document.getElementById('q-price-' + id)?.value,
+          quantity: document.getElementById('q-qty-' + id)?.value,
+        })
+      });
+      const data = await res.json();
+      if (data.error) {
+        errEl.textContent = data.error;
+        btn.disabled = false; btn.textContent = '✓ Approve & List on eBay';
+        return;
+      }
+      showToast('✓ Listed! eBay Item: ' + data.itemId, 'success');
+      await loadQueue();
+      // Auto-advance to next ready item
+      const nextReady = queueItems.find(i => i.status === 'ready');
+      if (nextReady) { currentQueueId = nextReady.id; renderQueueView(); }
+    } catch(e) {
+      errEl.textContent = 'Error: ' + e.message;
+      btn.disabled = false; btn.textContent = '✓ Approve & List on eBay';
+    }
+  }
+
+  async function skipQueueItem(id) {
+    await fetch('/api/queue/skip', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ id }) });
+    await loadQueue();
+    const nextReady = queueItems.find(i => i.status === 'ready' && i.id !== id);
+    if (nextReady) currentQueueId = nextReady.id;
+    renderQueueView();
+  }
+
+  async function removeFromQueue(id) {
+    await fetch('/api/queue/' + id, { method: 'DELETE', headers: { 'x-dashboard-password': PASSWORD } });
+    if (currentQueueId === id) currentQueueId = null;
+    await loadQueue();
+  }
+
+  async function retryQueueItem(id) {
+    await fetch('/api/queue/retry', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ id }) });
+    showToast('Retrying AI processing…');
+    await loadQueue();
+    queuePollTimer = setTimeout(loadQueue, 3000);
+  }
+
+  async function restoreQueueItem(id) {
+    // Move skipped item back to processing to re-run AI
+    await fetch('/api/queue/retry', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ id }) });
+    showToast('Re-processing…');
+    await loadQueue();
+    queuePollTimer = setTimeout(loadQueue, 3000);
   }
 
   // ── Search ────────────────────────────────────────────────────────────────
@@ -554,72 +836,46 @@
     searchTimeout = setTimeout(() => searchProducts(q), 300);
   }
 
-  let lastSearchItems = [];
-  let currentSort = 'name';
-  let sortAsc = true;
-
   function setSort(field) {
-    if (currentSort === field) {
-      sortAsc = !sortAsc;
-    } else {
-      currentSort = field;
-      sortAsc = true;
-    }
-    document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === field));
-    document.getElementById('sort-dir-btn').textContent = sortAsc ? '\u2191' : '\u2193';
+    if (currentSort === field) sortAsc = !sortAsc;
+    else { currentSort = field; sortAsc = true; }
+    document.querySelectorAll('.sort-btn[data-sort]').forEach(b => b.classList.toggle('active', b.dataset.sort === field));
+    document.getElementById('sort-dir-btn').textContent = sortAsc ? '↑' : '↓';
     if (lastSearchItems.length) renderProducts(lastSearchItems, window._lastSkuMap || {});
   }
 
   function toggleSortDir() {
     sortAsc = !sortAsc;
-    document.getElementById('sort-dir-btn').textContent = sortAsc ? '\u2191' : '\u2193';
+    document.getElementById('sort-dir-btn').textContent = sortAsc ? '↑' : '↓';
     if (lastSearchItems.length) renderProducts(lastSearchItems, window._lastSkuMap || {});
   }
 
   function sortedItems(items) {
-    const sorted = items.slice().sort(function(a, b) {
-      let av = '', bv = '';
-      if (currentSort === 'name') { av = a.name || ''; bv = b.name || ''; }
-      else if (currentSort === 'sku') { av = a.sku || ''; bv = b.sku || ''; }
-      else if (currentSort === 'category') { av = a.category || ''; bv = b.category || ''; }
+    return items.slice().sort((a, b) => {
+      const av = currentSort === 'sku' ? (a.sku||'') : (a.name||'');
+      const bv = currentSort === 'sku' ? (b.sku||'') : (b.name||'');
       const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
       return sortAsc ? cmp : -cmp;
     });
-    return sorted;
   }
 
   async function searchProducts(q) {
     document.getElementById('search-results').innerHTML = '<div class="empty-state">Searching…</div>';
     try {
       const markup = parseFloat(document.getElementById('markup-input').value) || 10;
-      const res = await fetch('/api/square/products?q=' + encodeURIComponent(q), {
-        headers: { 'x-dashboard-password': PASSWORD }
-      });
+      const res = await fetch('/api/square/products?q=' + encodeURIComponent(q), { headers: { 'x-dashboard-password': PASSWORD } });
       const items = await res.json();
-      if (items.error) { renderError(items.error); return; }
+      if (items.error) { document.getElementById('search-results').innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + esc(items.error) + '</div>'; return; }
       if (!items.length) { document.getElementById('search-results').innerHTML = '<div class="empty-state">No products found</div>'; return; }
-
-      const adjusted = items.map(p => ({
-        ...p,
-        ebayPrice: parseFloat((p.squarePrice * (1 + markup / 100)).toFixed(2))
-      }));
-
+      const adjusted = items.map(p => ({ ...p, ebayPrice: parseFloat((p.squarePrice * (1 + markup / 100)).toFixed(2)) }));
       lastSearchItems = adjusted;
       window._lastSkuMap = {};
       document.getElementById('sort-controls').style.display = 'flex';
       renderProducts(adjusted, {});
-
-      // Check which SKUs are already listed on eBay
       const skus = adjusted.map(p => p.sku).filter(Boolean);
       if (skus.length) {
-        fetch('/api/ebay/check-listed', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
-          body: JSON.stringify({ skus })
-        })
-        .then(r => r.json())
-        .then(skuMap => { window._lastSkuMap = skuMap; renderProducts(lastSearchItems, skuMap); })
-        .catch(() => {});
+        fetch('/api/ebay/check-listed', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ skus }) })
+          .then(r => r.json()).then(skuMap => { window._lastSkuMap = skuMap; renderProducts(lastSearchItems, skuMap); }).catch(() => {});
       }
     } catch(e) {
       document.getElementById('search-results').innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + e.message + '</div>';
@@ -629,598 +885,381 @@
   function renderProducts(items, skuMap) {
     skuMap = skuMap || {};
     items = sortedItems(items);
+    const queueSkus = new Set(queueItems.filter(i => !['approved'].includes(i.status)).map(i => i.product.sku).filter(Boolean));
     let rows = '';
-    items.forEach(function(p) {
+    items.forEach(p => {
       const info = p.sku ? (skuMap[p.sku] || null) : null;
       const isListed = !!(info && info.itemId);
-      const itemId = isListed ? info.itemId : null;
-      const ebayLivePrice = isListed ? info.ebayPrice : null;
+      const inQueue = queueSkus.has(p.sku);
+      const hasMismatch = isListed && info.ebayPrice !== null && Math.abs(info.ebayPrice - p.ebayPrice) >= 0.02;
 
-      // Price mismatch: compare live eBay price vs current Square×markup
-      const targetPrice = p.ebayPrice;
-      const hasMismatch = isListed && ebayLivePrice !== null && Math.abs(ebayLivePrice - targetPrice) >= 0.02;
+      const queueBtn = inQueue
+        ? '<button class="btn-queue in-queue">✓ In Queue</button>'
+        : `<button class="btn-queue" onclick="addToQueue(${JSON.stringify(p).replace(/"/g,'&quot;')})">+ Queue</button>`;
 
-      const listBtnClass = isListed ? 'list-btn listed' : 'list-btn unlisted';
-      const listBtnText = isListed ? '\u2713 Listed on eBay' : 'List on eBay';
-      const listBtn = '<button class="' + listBtnClass + '" onclick="openModal(' + JSON.stringify(p).replace(/"/g, '&quot;') + ')">' + listBtnText + '</button>';
+      const listBtn = `<button class="list-btn ${isListed ? 'listed' : 'unlisted'}" onclick="openModal(${JSON.stringify(p).replace(/"/g,'&quot;')})">${isListed ? '✓ Listed' : 'Direct List'}</button>`;
 
-      const syncBtn = hasMismatch ? '<button class="sync-price-btn" onclick="syncPrice(\''  + itemId + '\', ' + targetPrice + ', \'' + p.sku + '\')">\u21bb Sync $' + targetPrice.toFixed(2) + '</button>' : '';
+      const syncBtn = hasMismatch ? `<button class="sync-price-btn" onclick="syncPrice('${info.itemId}', ${p.ebayPrice}, '${p.sku}')">↻ $${p.ebayPrice.toFixed(2)}</button>` : '';
 
-      // Price cell — show mismatch warning if needed
-      let priceCell;
-      if (hasMismatch) {
-        priceCell = '<td class="price-eb">' +
-          '<span class="price-mismatch" title="eBay live: $' + ebayLivePrice.toFixed(2) + ' · Square\u00d7markup: $' + targetPrice.toFixed(2) + '">' +
-          '\u26a0\ufe0f $' + ebayLivePrice.toFixed(2) + ' \u2192 $' + targetPrice.toFixed(2) +
-          '</span></td>';
-      } else {
-        priceCell = '<td class="price-eb">' + (p.ebayPrice > 0 ? '$' + p.ebayPrice.toFixed(2) : '—') + '</td>';
-      }
+      let priceCell = isListed && hasMismatch
+        ? `<td><span class="price-mismatch" title="eBay: $${info.ebayPrice.toFixed(2)} → $${p.ebayPrice.toFixed(2)}">⚠ $${info.ebayPrice.toFixed(2)}</span></td>`
+        : `<td style="color:#3ecf8e;font-weight:600;">${p.ebayPrice > 0 ? '$'+p.ebayPrice.toFixed(2) : '—'}</td>`;
 
-      rows += '<tr' + (hasMismatch ? ' class="row-mismatch"' : '') + '>' +
-        '<td><div class="prod-name">' + esc(p.name) + '</div></td>' +
-        '<td><div class="prod-sku">' + (p.sku ? esc(p.sku) : '—') + '</div></td>' +
-        '<td class="price-sq">' + (p.squarePrice > 0 ? '$' + p.squarePrice.toFixed(2) : '—') + '</td>' +
-        priceCell +
-        '<td class="action-cell">' + listBtn + syncBtn + '</td>' +
-        '</tr>';
+      rows += `<tr${hasMismatch ? ' class="row-mismatch"' : ''}>
+        <td><div class="prod-name">${esc(p.name)}</div></td>
+        <td><div class="prod-sku">${esc(p.sku||'—')}</div></td>
+        <td style="color:#6e6e82;">${p.squarePrice > 0 ? '$'+p.squarePrice.toFixed(2) : '—'}</td>
+        ${priceCell}
+        <td class="action-cell">${queueBtn}${listBtn}${syncBtn}</td>
+      </tr>`;
     });
     document.getElementById('search-results').innerHTML =
-      '<table class="prod-table"><thead><tr>' +
-      '<th class="sortable' + (currentSort==='name'?' sort-active':'') + '" onclick="setSort(\'name\')">Product ' + (currentSort==='name'?(sortAsc?'↑':'↓'):'') + '</th>' +
-      '<th class="sortable' + (currentSort==='sku'?' sort-active':'') + '" onclick="setSort(\'sku\')">SKU ' + (currentSort==='sku'?(sortAsc?'↑':'↓'):'') + '</th>' +
-      '<th>Square Price</th><th>eBay Price</th><th></th>' +
-      '</tr></thead><tbody>' + rows + '</tbody></table>';
+      `<table class="prod-table"><thead><tr>
+        <th class="sortable${currentSort==='name'?' sort-active':''}" onclick="setSort('name')">Product ${currentSort==='name'?(sortAsc?'↑':'↓'):''}</th>
+        <th class="sortable${currentSort==='sku'?' sort-active':''}" onclick="setSort('sku')">SKU ${currentSort==='sku'?(sortAsc?'↑':'↓'):''}</th>
+        <th>Sq Price</th><th>eBay Price</th><th></th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   function refreshSkuStatus() {
     const skus = lastSearchItems.map(p => p.sku).filter(Boolean);
     if (!skus.length) return;
-    fetch('/api/ebay/check-listed', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
-      body: JSON.stringify({ skus })
-    }).then(r => r.json()).then(skuMap => renderProducts(lastSearchItems, skuMap)).catch(() => {});
+    fetch('/api/ebay/check-listed', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ skus }) })
+      .then(r => r.json()).then(skuMap => renderProducts(lastSearchItems, skuMap)).catch(() => {});
   }
 
   async function syncPrice(itemId, newPrice, sku) {
     const btn = event.target;
-    btn.disabled = true;
-    btn.textContent = 'Syncing…';
+    btn.disabled = true; btn.textContent = 'Syncing…';
     try {
-      const res = await fetch('/api/ebay/sync-price', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
-        body: JSON.stringify({ itemId, newPrice })
-      });
+      const res = await fetch('/api/ebay/sync-price', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ itemId, newPrice }) });
       const data = await res.json();
-      if (data.error) { showToast('Error: ' + data.error, true); btn.disabled = false; btn.textContent = '\u21bb Sync'; return; }
-      showToast('Price updated to $' + parseFloat(newPrice).toFixed(2) + ' on eBay');
+      if (data.error) { showToast('Error: ' + data.error, 'error'); btn.disabled = false; btn.textContent = '↻ Sync'; return; }
+      showToast('Price updated to $' + parseFloat(newPrice).toFixed(2));
       refreshSkuStatus();
-    } catch(e) {
-      showToast('Error: ' + e.message, true);
-      btn.disabled = false;
-    }
+    } catch(e) { showToast('Error: ' + e.message, 'error'); btn.disabled = false; }
   }
 
   async function removeListing(itemId, sku) {
     if (!confirm('Remove this listing from eBay?')) return;
     try {
-      const res = await fetch('/api/ebay/end-listing', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
-        body: JSON.stringify({ itemId })
-      });
+      const res = await fetch('/api/ebay/end-listing', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ itemId }) });
       const data = await res.json();
-      if (data.error) { showToast('Error: ' + data.error, true); return; }
+      if (data.error) { showToast('Error: ' + data.error, 'error'); return; }
       showToast('Listing removed from eBay');
       loadEbayListings(currentListingPage);
-      if (lastSearchItems.length) refreshSkuStatus();
-    } catch(e) {
-      showToast('Error: ' + e.message, true);
-    }
+      refreshSkuStatus();
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
   }
 
-  // ── Modal ─────────────────────────────────────────────────────────────────
+  // ── Direct List Modal ─────────────────────────────────────────────────────
   async function openModal(product) {
     currentProduct = product;
     document.getElementById('m-title').value = product.name.substring(0, 80);
-    document.getElementById('m-desc').value = product.description || product.name;
     document.getElementById('m-price').value = product.ebayPrice > 0 ? product.ebayPrice.toFixed(2) : '';
     document.getElementById('m-qty').value = '5';
     document.getElementById('m-sku').value = product.sku || '';
     document.getElementById('m-cat').value = '177762';
     document.getElementById('m-brand').value = '';
     document.getElementById('m-type').value = '';
-    document.getElementById('m-weight').value = (product.weight && product.weight > 0) ? product.weight : '';
-    document.getElementById('m-desc').value = '';
-    document.getElementById('desc-preview-inner').innerHTML = '<div style="color:#555566;font-size:12px;text-align:center;padding:20px;">Generating description…</div>';
-    document.getElementById('desc-gen-status').textContent = '';
-    setDescTab('preview');
+    document.getElementById('m-weight').value = product.weight > 0 ? product.weight : '';
     document.getElementById('modal-err').textContent = '';
     document.getElementById('submit-btn').disabled = true;
-    document.getElementById('submit-btn').textContent = 'List on eBay';
+    document.getElementById('category-rationale').textContent = '';
+    updateTitleCountModal();
 
-    // Warn if SKU already listed on eBay
-    const sku = product.sku ? String(product.sku).trim() : '';
-    if (sku && listedSkus.has(sku)) {
-      document.getElementById('modal-err').textContent = '⚠️ This SKU (' + sku + ') is already listed on eBay. Listing again will create a duplicate.';
-      document.getElementById('modal-err').style.color = '#f59e0b';
-    }
-    updateTitleCount();
-
-    // Show photo if available from Square
     const photoWrap = document.getElementById('m-photo-wrap');
-    const photoImg = document.getElementById('m-photo');
-    if (product.imageUrl) {
-      photoImg.src = product.imageUrl;
-      photoWrap.style.display = 'flex';
-      photoWrap.style.alignItems = 'center';
-    } else {
-      photoWrap.style.display = 'none';
-      photoImg.src = '';
-    }
+    if (product.imageUrl) { document.getElementById('m-photo').src = product.imageUrl; photoWrap.style.display = 'flex'; }
+    else photoWrap.style.display = 'none';
 
+    document.getElementById('desc-preview-inner').innerHTML = '<div style="color:#555566;font-size:12px;text-align:center;padding:20px;">Generating…</div>';
     document.getElementById('modal').classList.add('open');
 
-    // Auto-fill category, brand, type, weight using Claude
     const autofillEl = document.getElementById('autofill-status');
-    autofillEl.textContent = '🤖 Auto-filling fields...';
-    autofillEl.style.color = '#888';
+    autofillEl.textContent = '🤖 Auto-filling…'; autofillEl.style.color = '#888';
 
-    try {
-      const res = await fetch('/api/claude/autofill', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
-        body: JSON.stringify({
-          name: product.name,
-          description: product.description || '',
-          weight: product.weight || null
-        })
-      });
-      const data = await res.json();
-      if (!data.error) {
-        if (data.categoryId) document.getElementById('m-cat').value = data.categoryId;
-        if (data.brand) document.getElementById('m-brand').value = data.brand;
-        if (data.type) document.getElementById('m-type').value = data.type;
-        if (data.weight && !document.getElementById('m-weight').value) {
-          document.getElementById('m-weight').value = data.weight;
-        }
-        autofillEl.textContent = data.categoryName ? '✓ Category: ' + data.categoryName : '✓ Fields auto-filled';
-        autofillEl.style.color = '#1D9E75';
-      } else {
-        autofillEl.textContent = 'Auto-fill unavailable — fill in manually';
-        autofillEl.style.color = '#aaa';
-      }
-    } catch(e) {
-      autofillEl.textContent = 'Auto-fill unavailable — fill in manually';
-      autofillEl.style.color = '#aaa';
-    }
-
-    document.getElementById('submit-btn').disabled = false;
-
-    // Generate branded HTML description via Claude
-    const descStatus = document.getElementById('desc-gen-status');
-    descStatus.textContent = '✦ Generating description…';
-    descStatus.style.color = '#9b804a';
-    try {
-      const descRes = await fetch('/api/claude/generate-description', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
-        body: JSON.stringify({
-          name: product.name,
-          description: product.description || '',
-          sku: product.sku || '',
-          weight: product.weight || null,
-          imageUrl: product.imageUrl || ''
-        })
-      });
-      const descData = await descRes.json();
-      if (descData.html) {
-        document.getElementById('m-desc').value = descData.html;
-        document.getElementById('desc-preview-inner').innerHTML = descData.html;
-        descStatus.textContent = '✓ Description generated';
-        descStatus.style.color = '#1D9E75';
-      } else {
-        descStatus.textContent = descData.error || 'Could not generate description';
-        descStatus.style.color = '#c42b30';
-      }
-    } catch(e) {
-      descStatus.textContent = 'Description generation failed — edit manually';
-      descStatus.style.color = '#aaa';
-    }
+    // Run autofill and description generation in parallel
+    Promise.all([
+      fetch('/api/claude/autofill', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ name: product.name, description: product.description||'', weight: product.weight||null }) }).then(r => r.json()).catch(() => null),
+      fetch('/api/claude/generate-description', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ name: product.name, description: product.description||'', sku: product.sku||'', weight: product.weight||null, imageUrl: product.imageUrl||'' }) }).then(r => r.json()).catch(() => null)
+    ]).then(([af, desc]) => {
+      if (af && !af.error) {
+        if (af.categoryId) document.getElementById('m-cat').value = af.categoryId;
+        if (af.brand) document.getElementById('m-brand').value = af.brand;
+        if (af.type) document.getElementById('m-type').value = af.type;
+        if (af.weight && !document.getElementById('m-weight').value) document.getElementById('m-weight').value = af.weight;
+        if (af.categoryRationale) document.getElementById('category-rationale').textContent = '→ ' + af.categoryRationale;
+        autofillEl.textContent = '✓ ' + (af.categoryName || 'Fields auto-filled'); autofillEl.style.color = '#1D9E75';
+      } else { autofillEl.textContent = 'Fill in manually'; autofillEl.style.color = '#aaa'; }
+      if (desc && desc.html) document.getElementById('desc-preview-inner').innerHTML = desc.html;
+      document.getElementById('submit-btn').disabled = false;
+    });
   }
 
-  function setDescTab(tab) {
-    const preview = document.getElementById('desc-preview-wrap');
-    const edit = document.getElementById('m-desc');
-    const btnPreview = document.getElementById('desc-tab-preview');
-    const btnEdit = document.getElementById('desc-tab-edit');
-    if (tab === 'preview') {
-      preview.style.display = 'block';
-      edit.style.display = 'none';
-      btnPreview.style.background = '#E53238'; btnPreview.style.color = '#fff';
-      btnEdit.style.background = '#f5f5f5'; btnEdit.style.color = '#555';
-      // sync edits back to preview
-      document.getElementById('desc-preview-inner').innerHTML = edit.value;
-    } else {
-      preview.style.display = 'none';
-      edit.style.display = 'block';
-      btnPreview.style.background = '#f5f5f5'; btnPreview.style.color = '#555';
-      btnEdit.style.background = '#E53238'; btnEdit.style.color = '#fff';
-    }
+  document.getElementById('m-title').addEventListener('input', updateTitleCountModal);
+  function updateTitleCountModal() {
+    document.getElementById('m-title-count').textContent = document.getElementById('m-title').value.length + '/80';
   }
 
-  function closeModal() {
-    document.getElementById('modal').classList.remove('open');
-    currentProduct = null;
-  }
-
-  document.getElementById('m-title').addEventListener('input', updateTitleCount);
-
-  function updateTitleCount() {
-    const len = document.getElementById('m-title').value.length;
-    document.getElementById('m-title-count').textContent = len + '/80';
-  }
+  function closeModal() { document.getElementById('modal').classList.remove('open'); currentProduct = null; }
 
   async function submitListing() {
     const btn = document.getElementById('submit-btn');
     const errEl = document.getElementById('modal-err');
     errEl.textContent = '';
-
     const title = document.getElementById('m-title').value.trim();
     const price = parseFloat(document.getElementById('m-price').value);
     const qty = parseInt(document.getElementById('m-qty').value);
     const cat = document.getElementById('m-cat').value.trim();
     const cond = document.getElementById('m-cond').value;
-    const desc = document.getElementById('m-desc').value.trim();
+    const desc = document.getElementById('desc-preview-inner').innerHTML;
     const sku = document.getElementById('m-sku').value.trim();
     const brand = document.getElementById('m-brand').value.trim();
     const itemType = document.getElementById('m-type').value.trim();
-    const imageUrl = currentProduct?.imageUrl || '';
     const weightLbs = parseFloat(document.getElementById('m-weight').value);
-    const pkgDepth = parseInt(document.getElementById('m-depth').value) || 0;
-    const pkgWidth = parseInt(document.getElementById('m-width').value) || 0;
-    const pkgHeight = parseInt(document.getElementById('m-height').value) || 0;
 
-    if (!title) { errEl.textContent = 'Title is required.'; return; }
-    if (!price || price < 0.99) { errEl.textContent = 'Price must be at least $0.99.'; return; }
-    if (!cat) { errEl.textContent = 'Category ID is required.'; return; }
-    if (!brand) { errEl.textContent = 'Brand is required by eBay.'; return; }
-    if (!itemType) { errEl.textContent = 'Type is required by eBay.'; return; }
-    if (!weightLbs || weightLbs <= 0) { errEl.textContent = 'Weight is required by eBay.'; return; }
+    if (!title) { errEl.textContent = 'Title required.'; return; }
+    if (!price || price < 0.99) { errEl.textContent = 'Price must be ≥ $0.99.'; return; }
+    if (!brand) { errEl.textContent = 'Brand required.'; return; }
+    if (!itemType) { errEl.textContent = 'Type required.'; return; }
+    if (!weightLbs) { errEl.textContent = 'Weight required.'; return; }
 
-    btn.disabled = true;
-    btn.textContent = 'Listing…';
-
+    btn.disabled = true; btn.textContent = 'Listing…';
     try {
-      const res = await fetch('/api/ebay/list', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
-        body: JSON.stringify({
-          name: title, description: desc, sku,
-          ebayPrice: price, quantity: qty,
-          categoryId: cat, conditionId: cond,
-          brand, itemType, imageUrl, weightLbs, pkgDepth, pkgWidth, pkgHeight
-        })
-      });
+      const res = await fetch('/api/ebay/list', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ name: title, description: desc, sku, ebayPrice: price, quantity: qty, categoryId: cat, conditionId: cond, brand, itemType, imageUrl: currentProduct?.imageUrl||'', weightLbs }) });
       const data = await res.json();
-      if (data.error) {
-        errEl.textContent = data.error;
-        btn.disabled = false;
-        btn.textContent = 'List on eBay';
-        return;
-      }
-
-      closeModal();
-      showToast('Listed! eBay Item ID: ' + data.itemId, 'success');
-      loadEbayListings();
-    } catch(e) {
-      errEl.textContent = 'Error: ' + e.message;
-      btn.disabled = false;
-      btn.textContent = 'List on eBay';
-    }
+      if (data.error) { errEl.textContent = data.error; btn.disabled = false; btn.textContent = 'List on eBay'; return; }
+      closeModal(); showToast('Listed! Item ID: ' + data.itemId, 'success');
+      loadEbayListings(); refreshSkuStatus();
+    } catch(e) { errEl.textContent = 'Error: ' + e.message; btn.disabled = false; btn.textContent = 'List on eBay'; }
   }
+
+  document.getElementById('modal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
 
   // ── eBay Listings ─────────────────────────────────────────────────────────
   async function loadEbayListings(page) {
-    page = page || currentListingPage;
-    currentListingPage = page;
+    page = page || currentListingPage; currentListingPage = page;
     const el = document.getElementById('ebay-listings');
     const btn = document.getElementById('refresh-listings-btn');
     el.innerHTML = '<div class="empty-state">Loading…</div>';
-    btn.textContent = 'Loading…';
-    btn.disabled = true;
-
+    btn.textContent = 'Loading…'; btn.disabled = true;
     try {
-      const res = await fetch('/api/ebay/listings?page=' + page, {
-        headers: { 'x-dashboard-password': PASSWORD }
-      });
+      const res = await fetch('/api/ebay/listings?page=' + page, { headers: { 'x-dashboard-password': PASSWORD } });
       const data = await res.json();
-      if (data.error) { el.innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + esc(data.error) + '</div>'; return; }
-
+      if (data.error) { el.innerHTML = '<div class="empty-state" style="color:#c42b30;">' + esc(data.error) + '</div>'; return; }
       allEbayListings = data.listings || [];
       listedSkus = new Set(allEbayListings.map(l => l.sku).filter(Boolean));
-      document.getElementById('listing-count').textContent = data.totalItems + ' active listing' + (data.totalItems !== 1 ? 's' : '');
+      document.getElementById('listing-count').textContent = data.totalItems + ' active listings';
       document.getElementById('stat-listed').textContent = data.totalItems;
-      document.getElementById('tab-active-btn').innerHTML = 'Active Listings <span class="tab-badge" style="background:#1D9E75;">' + data.totalItems + '</span>';
-
+      document.getElementById('tab-btn-active').innerHTML = 'Active Listings <span class="tab-badge green">' + data.totalItems + '</span>';
       renderListings(allEbayListings);
       renderPages(data.totalPages, page);
-    } catch(e) {
-      el.innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + e.message + '</div>';
-    }
-    btn.textContent = '↻ Refresh';
-    btn.disabled = false;
+    } catch(e) { el.innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + e.message + '</div>'; }
+    btn.textContent = '↻ Refresh'; btn.disabled = false;
   }
 
   function filterListings() {
     const q = document.getElementById('listing-search').value.toLowerCase();
-    const filtered = q ? allEbayListings.filter(l => l.title.toLowerCase().includes(q) || l.sku.includes(q)) : allEbayListings;
-    renderListings(filtered);
+    renderListings(q ? allEbayListings.filter(l => (l.title||'').toLowerCase().includes(q) || (l.sku||'').includes(q)) : allEbayListings);
   }
 
-  function sortedListings(listings) {
-    return listings.slice().sort(function(a, b) {
-      const av = listingSort === 'sku' ? (a.sku || '') : (a.title || '');
-      const bv = listingSort === 'sku' ? (b.sku || '') : (b.title || '');
-      const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
-      return listingSortAsc ? cmp : -cmp;
+  function sortedListings(l) {
+    return l.slice().sort((a, b) => {
+      const av = listingSort === 'sku' ? (a.sku||'') : (a.title||'');
+      const bv = listingSort === 'sku' ? (b.sku||'') : (b.title||'');
+      return (listingSortAsc ? 1 : -1) * av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
     });
   }
 
-  function setListingSort(field) {
-    if (listingSort === field) { listingSortAsc = !listingSortAsc; }
-    else { listingSort = field; listingSortAsc = true; }
-    document.querySelectorAll('[data-lsort]').forEach(b => b.classList.toggle('active', b.dataset.lsort === field));
+  function setListingSort(f) {
+    if (listingSort === f) listingSortAsc = !listingSortAsc; else { listingSort = f; listingSortAsc = true; }
+    document.querySelectorAll('[data-lsort]').forEach(b => b.classList.toggle('active', b.dataset.lsort === f));
     document.getElementById('listing-sort-dir').textContent = listingSortAsc ? '↑' : '↓';
     filterListings();
   }
-
-  function toggleListingSortDir() {
-    listingSortAsc = !listingSortAsc;
-    document.getElementById('listing-sort-dir').textContent = listingSortAsc ? '↑' : '↓';
-    filterListings();
-  }
+  function toggleListingSortDir() { listingSortAsc = !listingSortAsc; document.getElementById('listing-sort-dir').textContent = listingSortAsc ? '↑' : '↓'; filterListings(); }
 
   function renderListings(listings) {
     const el = document.getElementById('ebay-listings');
     if (!listings.length) { el.innerHTML = '<div class="empty-state">No listings found</div>'; return; }
-
     listings = sortedListings(listings);
     const skuCount = {};
-    listings.forEach(l => { if (l.sku) skuCount[l.sku] = (skuCount[l.sku] || 0) + 1; });
-
-    const thTitle = '<th class="sortable' + (listingSort==='title'?' sort-active':'') + '" onclick="setListingSort(\'title\')">Title ' + (listingSort==='title'?(listingSortAsc?'↑':'↓'):'') + '</th>';
-    const thSku   = '<th class="sortable' + (listingSort==='sku'?' sort-active':'') + '" onclick="setListingSort(\'sku\')">SKU ' + (listingSort==='sku'?(listingSortAsc?'↑':'↓'):'') + '</th>';
-
-    el.innerHTML = '<table class="listings-table"><thead><tr>' + thTitle + thSku + '<th>Price</th><th>Qty</th><th></th></tr></thead><tbody>' +
+    listings.forEach(l => { if (l.sku) skuCount[l.sku] = (skuCount[l.sku]||0)+1; });
+    const thT = `<th class="sortable${listingSort==='title'?' sort-active':''}" onclick="setListingSort('title')">Title ${listingSort==='title'?(listingSortAsc?'↑':'↓'):''}</th>`;
+    const thS = `<th class="sortable${listingSort==='sku'?' sort-active':''}" onclick="setListingSort('sku')">SKU ${listingSort==='sku'?(listingSortAsc?'↑':'↓'):''}</th>`;
+    el.innerHTML = `<table class="listings-table"><thead><tr>${thT}${thS}<th>Price</th><th>Qty</th><th></th></tr></thead><tbody>` +
       listings.map(l => {
         const isDupe = l.sku && skuCount[l.sku] > 1;
-        const removeBtn = '<button class="remove-btn" onclick="removeListing(\'' + l.itemId + '\', \'' + (l.sku||'') + '\')">Remove</button>';
-        return '<tr' + (isDupe ? ' style="background:#24242c8e6;"' : '') + '>' +
-          '<td>' + esc(l.title.substring(0, 50)) + (isDupe ? '<span class="duplicate-badge">DUPLICATE</span>' : '') + '</td>' +
-          '<td style="color:#555566;font-size:12px;">' + esc(l.sku || '—') + '</td>' +
-          '<td style="color:#3ecf8e;font-weight:600;">$' + l.price.toFixed(2) + '</td>' +
-          '<td>' + l.quantity + '</td>' +
-          '<td style="display:flex;gap:6px;align-items:center;"><a href="' + l.url + '" target="_blank" style="color:#E53238;font-size:12px;text-decoration:none;">View →</a>' + removeBtn + '</td>' +
-        '</tr>';
-      }).join('') +
-      '</tbody></table>';
+        return `<tr><td>${esc(l.title.substring(0,50))}${isDupe?'<span class="duplicate-badge">DUPE</span>':''}</td>
+          <td style="color:#555566;font-size:12px;">${esc(l.sku||'—')}</td>
+          <td style="color:#3ecf8e;font-weight:600;">$${l.price.toFixed(2)}</td>
+          <td>${l.quantity}</td>
+          <td style="display:flex;gap:6px;">
+            <a href="${l.url}" target="_blank" style="color:#E53238;font-size:12px;">View →</a>
+            <button class="remove-btn" onclick="removeListing('${l.itemId}','${l.sku||''}')">Remove</button>
+          </td></tr>`;
+      }).join('') + '</tbody></table>';
   }
 
   function renderPages(totalPages, current) {
     const el = document.getElementById('listing-pages');
     if (totalPages <= 1) { el.innerHTML = ''; return; }
     let html = '';
-    for (let i = 1; i <= totalPages; i++) {
-      html += '<button class="page-btn' + (i === current ? ' active' : '') + '" onclick="loadEbayListings(' + i + ')">' + i + '</button>';
-    }
+    for (let i = 1; i <= totalPages; i++) html += `<button class="page-btn${i===current?' active':''}" onclick="loadEbayListings(${i})">${i}</button>`;
     el.innerHTML = html;
-  }
-
-  // ── Sync orders ───────────────────────────────────────────────────────────
-  async function syncSellability() {
-    const btn = document.getElementById('sellability-btn');
-    btn.textContent = 'Checking…';
-    btn.classList.add('loading');
-    try {
-      const res = await fetch('/api/sync-sellability', {
-        method: 'POST',
-        headers: { 'x-dashboard-password': PASSWORD }
-      });
-      const data = await res.json();
-      if (data.error) { showToast('Error: ' + data.error, true); }
-      else { showToast('Sellability check complete — unsellable items removed from eBay'); }
-    } catch(e) {
-      showToast('Error: ' + e.message, true);
-    } finally {
-      btn.textContent = '✕ Remove Unsellable';
-      btn.classList.remove('loading');
-    }
-  }
-
-  async function syncOrders() {
-    const btn = document.getElementById('sync-btn');
-    btn.classList.add('loading');
-    btn.textContent = 'Syncing…';
-    try {
-      const res = await fetch('/api/sync-orders', {
-        method: 'POST',
-        headers: { 'x-dashboard-password': PASSWORD }
-      });
-      const data = await res.json();
-      if (data.error) { showToast(data.error, 'error'); }
-      else { ordersCount++; document.getElementById('stat-orders').textContent = ordersCount; showToast('Orders synced to Square', 'success'); }
-    } catch(e) {
-      showToast('Sync failed: ' + e.message, 'error');
-    }
-    btn.classList.remove('loading');
-    btn.textContent = '↻ Sync eBay Orders';
   }
 
   // ── Ended Listings ────────────────────────────────────────────────────────
   async function loadEndedListings() {
     const el = document.getElementById('ended-listings');
     const btn = document.getElementById('refresh-ended-btn');
-    el.innerHTML = '<div class="empty-state">Loading…</div>';
-    btn.textContent = 'Loading…';
-    btn.disabled = true;
+    el.innerHTML = '<div class="empty-state">Loading…</div>'; btn.textContent = 'Loading…'; btn.disabled = true;
     try {
-      const res = await fetch('/api/ebay/ended-listings', {
-        headers: { 'x-dashboard-password': PASSWORD }
-      });
+      const res = await fetch('/api/ebay/ended-listings', { headers: { 'x-dashboard-password': PASSWORD } });
       const data = await res.json();
-      if (data.error) { el.innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + esc(data.error) + '</div>'; return; }
       allEndedListings = data || [];
-      const btn = document.getElementById('tab-ended-btn');
-      if (allEndedListings.length) {
-        btn.innerHTML = 'Ended Listings <span class="tab-badge">' + allEndedListings.length + '</span>';
-      } else {
-        btn.textContent = 'Ended Listings';
-      }
+      const tabBtn = document.getElementById('tab-btn-ended');
+      tabBtn.innerHTML = 'Ended Listings' + (allEndedListings.length ? ` <span class="tab-badge">${allEndedListings.length}</span>` : '');
       renderEndedListings(allEndedListings);
-    } catch(e) {
-      el.innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + e.message + '</div>';
-    }
-    btn.textContent = '↻ Refresh';
-    btn.disabled = false;
+    } catch(e) { el.innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + e.message + '</div>'; }
+    btn.textContent = '↻ Refresh'; btn.disabled = false;
   }
 
   function filterEndedListings() {
     const q = document.getElementById('ended-search').value.toLowerCase();
-    const filtered = q ? allEndedListings.filter(l =>
-      (l.title || '').toLowerCase().includes(q) || (l.sku || '').includes(q)
-    ) : allEndedListings;
-    renderEndedListings(filtered);
+    renderEndedListings(q ? allEndedListings.filter(l => (l.title||'').toLowerCase().includes(q)||(l.sku||'').includes(q)) : allEndedListings);
   }
 
-  function sortedEndedListings(listings) {
-    return listings.slice().sort(function(a, b) {
-      let av, bv;
-      if (endedSort === 'endedAt') { av = a.endedAt || ''; bv = b.endedAt || ''; }
-      else if (endedSort === 'title') { av = a.title || ''; bv = b.title || ''; }
-      else { av = a.sku || ''; bv = b.sku || ''; }
-      const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
-      return endedSortAsc ? cmp : -cmp;
+  function sortedEndedListings(l) {
+    return l.slice().sort((a, b) => {
+      const av = endedSort==='endedAt'?(a.endedAt||''):endedSort==='title'?(a.title||''):(a.sku||'');
+      const bv = endedSort==='endedAt'?(b.endedAt||''):endedSort==='title'?(b.title||''):(b.sku||'');
+      return (endedSortAsc?1:-1)*av.localeCompare(bv, undefined, {numeric:true, sensitivity:'base'});
     });
   }
 
-  function setEndedSort(field) {
-    if (endedSort === field) { endedSortAsc = !endedSortAsc; }
-    else { endedSort = field; endedSortAsc = field !== 'endedAt'; }
-    document.querySelectorAll('[data-esort]').forEach(b => b.classList.toggle('active', b.dataset.esort === field));
-    document.getElementById('ended-sort-dir').textContent = endedSortAsc ? '↑' : '↓';
+  function setEndedSort(f) {
+    if (endedSort===f) endedSortAsc=!endedSortAsc; else {endedSort=f; endedSortAsc=f!=='endedAt';}
+    document.querySelectorAll('[data-esort]').forEach(b=>b.classList.toggle('active',b.dataset.esort===f));
+    document.getElementById('ended-sort-dir').textContent=endedSortAsc?'↑':'↓';
     filterEndedListings();
   }
-
-  function toggleEndedSortDir() {
-    endedSortAsc = !endedSortAsc;
-    document.getElementById('ended-sort-dir').textContent = endedSortAsc ? '↑' : '↓';
-    filterEndedListings();
-  }
+  function toggleEndedSortDir(){endedSortAsc=!endedSortAsc;document.getElementById('ended-sort-dir').textContent=endedSortAsc?'↑':'↓';filterEndedListings();}
 
   function renderEndedListings(listings) {
     const el = document.getElementById('ended-listings');
-    if (!listings.length) {
-      el.innerHTML = '<div class="empty-state">No ended listings — items ended due to sellable=N will appear here</div>';
-      return;
-    }
+    if (!listings.length) { el.innerHTML = '<div class="empty-state">No ended listings</div>'; return; }
     listings = sortedEndedListings(listings);
-
-    const thDate  = '<th class="sortable' + (endedSort==='endedAt'?' sort-active':'') + '" onclick="setEndedSort(\'endedAt\')">Date Ended ' + (endedSort==='endedAt'?(endedSortAsc?'↑':'↓'):'') + '</th>';
-    const thTitle = '<th class="sortable' + (endedSort==='title'?' sort-active':'') + '" onclick="setEndedSort(\'title\')">Title ' + (endedSort==='title'?(endedSortAsc?'↑':'↓'):'') + '</th>';
-    const thSku   = '<th class="sortable' + (endedSort==='sku'?' sort-active':'') + '" onclick="setEndedSort(\'sku\')">SKU ' + (endedSort==='sku'?(endedSortAsc?'↑':'↓'):'') + '</th>';
-
-    el.innerHTML = '<table class="listings-table"><thead><tr>' +
-      thDate + thTitle + thSku + '<th>Price</th><th>Weight</th><th></th>' +
-      '</tr></thead><tbody>' +
-      listings.map(function(l) {
-        const endedDate = l.endedAt ? new Date(l.endedAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
-        const relistBtn = '<button class="relist-btn" onclick="relistItem(\'' + esc(l.sku) + '\', this)">↺ Relist</button>';
-        const weight = l.weightLbs ? l.weightLbs + ' lb' : '—';
-        return '<tr>' +
-          '<td class="ended-date">' + endedDate + '</td>' +
-          '<td style="font-weight:500;max-width:280px;">' + esc((l.title || '').substring(0, 55)) + '</td>' +
-          '<td style="color:#555566;font-size:12px;">' + esc(l.sku || '—') + '</td>' +
-          '<td style="color:#3ecf8e;font-weight:600;">$' + (l.ebayPrice || 0).toFixed(2) + '</td>' +
-          '<td style="color:#6e6e82;font-size:12px;">' + weight + '</td>' +
-          '<td>' + relistBtn + '</td>' +
-        '</tr>';
-      }).join('') +
-      '</tbody></table>';
+    el.innerHTML = `<table class="listings-table"><thead><tr>
+      <th class="sortable${endedSort==='endedAt'?' sort-active':''}" onclick="setEndedSort('endedAt')">Ended ${endedSort==='endedAt'?(endedSortAsc?'↑':'↓'):''}</th>
+      <th class="sortable${endedSort==='title'?' sort-active':''}" onclick="setEndedSort('title')">Title ${endedSort==='title'?(endedSortAsc?'↑':'↓'):''}</th>
+      <th class="sortable${endedSort==='sku'?' sort-active':''}" onclick="setEndedSort('sku')">SKU</th>
+      <th>Price</th><th>Weight</th><th></th>
+    </tr></thead><tbody>` +
+    listings.map(l => {
+      const d = l.endedAt ? new Date(l.endedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+      return `<tr><td style="font-size:12px;color:#6e6e82;">${d}</td>
+        <td style="max-width:260px;">${esc((l.title||'').substring(0,50))}</td>
+        <td style="color:#555566;font-size:12px;">${esc(l.sku||'—')}</td>
+        <td style="color:#3ecf8e;font-weight:600;">$${(l.ebayPrice||0).toFixed(2)}</td>
+        <td style="color:#6e6e82;font-size:12px;">${l.weightLbs?l.weightLbs+' lb':'—'}</td>
+        <td><button class="relist-btn" onclick="relistItem('${esc(l.sku)}',this)">↺ Relist</button></td>
+      </tr>`;
+    }).join('') + '</tbody></table>';
   }
 
   async function relistItem(sku, btn) {
     if (!confirm('Relist "' + sku + '" on eBay now?')) return;
-    btn.disabled = true;
-    btn.textContent = 'Relisting…';
+    btn.disabled = true; btn.textContent = 'Relisting…';
     try {
-      const res = await fetch('/api/ebay/relist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
-        body: JSON.stringify({ sku })
-      });
+      const res = await fetch('/api/ebay/relist', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ sku }) });
       const data = await res.json();
-      if (data.error) {
-        showToast('Relist failed: ' + data.error, 'error');
-        btn.disabled = false;
-        btn.textContent = '↺ Relist';
-        return;
-      }
-      showToast('✓ Relisted! eBay Item ID: ' + data.itemId, 'success');
-      loadEndedListings();
-      loadEbayListings();
-    } catch(e) {
-      showToast('Error: ' + e.message, 'error');
-      btn.disabled = false;
-      btn.textContent = '↺ Relist';
-    }
+      if (data.error) { showToast('Relist failed: ' + data.error, 'error'); btn.disabled = false; btn.textContent = '↺ Relist'; return; }
+      showToast('✓ Relisted! Item ID: ' + data.itemId, 'success');
+      loadEndedListings(); loadEbayListings();
+    } catch(e) { showToast('Error: ' + e.message, 'error'); btn.disabled = false; btn.textContent = '↺ Relist'; }
+  }
+
+  // ── Sync buttons ──────────────────────────────────────────────────────────
+  async function syncOrders() {
+    const btn = document.getElementById('sync-btn');
+    btn.classList.add('loading'); btn.textContent = 'Syncing…';
+    try {
+      const res = await fetch('/api/sync-orders', { method: 'POST', headers: { 'x-dashboard-password': PASSWORD } });
+      const data = await res.json();
+      if (data.error) showToast(data.error, 'error');
+      else { document.getElementById('stat-orders').textContent = parseInt(document.getElementById('stat-orders').textContent||0)+1; showToast('Orders synced', 'success'); }
+    } catch(e) { showToast('Sync failed: ' + e.message, 'error'); }
+    btn.classList.remove('loading'); btn.textContent = '↻ Sync Orders';
+  }
+
+  async function syncSellability() {
+    const btn = document.getElementById('sellability-btn');
+    btn.classList.add('loading'); btn.textContent = 'Checking…';
+    try {
+      const res = await fetch('/api/sync-sellability', { method: 'POST', headers: { 'x-dashboard-password': PASSWORD } });
+      const data = await res.json();
+      if (data.error) showToast('Error: ' + data.error, 'error');
+      else showToast('Sellability check complete');
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+    btn.classList.remove('loading'); btn.textContent = '✕ Unsellable';
   }
 
   async function syncRelist() {
     const btn = document.getElementById('relist-check-btn');
-    btn.textContent = 'Checking…';
-    btn.classList.add('loading');
+    btn.classList.add('loading'); btn.textContent = 'Checking…';
     try {
-      const res = await fetch('/api/sync-relist', {
-        method: 'POST',
-        headers: { 'x-dashboard-password': PASSWORD }
-      });
+      const res = await fetch('/api/sync-relist', { method: 'POST', headers: { 'x-dashboard-password': PASSWORD } });
       const data = await res.json();
-      if (data.error) { showToast('Error: ' + data.error, 'error'); }
+      if (data.error) showToast('Error: ' + data.error, 'error');
       else { showToast('Relist check complete'); loadEndedListings(); loadEbayListings(); }
-    } catch(e) {
-      showToast('Error: ' + e.message, 'error');
-    } finally {
-      btn.textContent = '↺ Check Relist';
-      btn.classList.remove('loading');
-    }
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+    btn.classList.remove('loading'); btn.textContent = '↺ Relist Check';
+  }
+
+  // ── Bulk Revise ───────────────────────────────────────────────────────────
+  async function startBulkRevise() {
+    if (!confirm('Update ALL active eBay listings with the branded template and Store categories? This may take several minutes.')) return;
+    const btn = document.getElementById('bulk-revise-btn');
+    const panel = document.getElementById('bulk-revise-panel');
+    const bar = document.getElementById('bulk-revise-bar');
+    const log = document.getElementById('bulk-revise-log');
+    const summary = document.getElementById('bulk-revise-summary');
+    btn.classList.add('loading'); btn.textContent = '✦ Revising…';
+    panel.style.display = 'block'; log.innerHTML = ''; bar.style.width = '0%'; summary.textContent = '';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const es = new EventSource('/api/ebay/bulk-revise?pwd=' + encodeURIComponent(PASSWORD));
+    es.onmessage = (e) => {
+      const d = JSON.parse(e.data);
+      if (d.type === 'status') { log.innerHTML += `<div style="color:#6e6e82;">${esc(d.message)}</div>`; if (d.total) summary.textContent = '0 / ' + d.total; }
+      if (d.type === 'progress') {
+        const pct = Math.round((d.index/d.total)*100);
+        bar.style.width = pct + '%'; summary.textContent = d.index+'/'+d.total+' ('+pct+'%)';
+        const color = d.status==='done'?'#1D9E75':d.status==='error'?'#c42b30':'#6e6e82';
+        const icon = d.status==='done'?'✓':d.status==='error'?'✗':'…';
+        log.innerHTML += `<div style="color:${color};">${icon} [${d.index}/${d.total}] ${esc(d.title||d.itemId)}${d.storeCat?' → '+esc(d.storeCat):''}${d.message?' — '+esc(d.message):''}</div>`;
+        log.scrollTop = log.scrollHeight;
+      }
+      if (d.type === 'done') {
+        bar.style.width='100%'; bar.style.background=d.failed>0?'#c47a1a':'#1D9E75';
+        summary.textContent='Complete — '+d.succeeded+' updated, '+d.failed+' failed';
+        log.innerHTML+=`<div style="color:#1D9E75;font-weight:600;margin-top:4px;">✓ Done: ${d.succeeded} updated, ${d.failed} failed</div>`;
+        log.scrollTop=log.scrollHeight; btn.textContent='✦ Bulk Revise'; btn.classList.remove('loading'); es.close(); loadEbayListings();
+      }
+      if (d.type === 'error') { log.innerHTML+=`<div style="color:#c42b30;">✗ ${esc(d.message)}</div>`; btn.textContent='✦ Bulk Revise'; btn.classList.remove('loading'); es.close(); }
+    };
+    es.onerror = () => { log.innerHTML+=`<div style="color:#c42b30;">✗ Connection lost</div>`; btn.textContent='✦ Bulk Revise'; btn.classList.remove('loading'); es.close(); };
   }
 
   // ── Utilities ─────────────────────────────────────────────────────────────
-  function updateMarkupStat() {
-    const v = document.getElementById('markup-input').value;
-    document.getElementById('stat-markup').textContent = v + '%';
-  }
-
-  function esc(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
+  function updateMarkupStat() { document.getElementById('stat-markup').textContent = document.getElementById('markup-input').value + '%'; }
+  function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   let toastTimer;
   function showToast(msg, type) {
     const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.className = 'toast show ' + (type || '');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.className = 'toast'; }, 3500);
+    t.textContent = msg; t.className = 'toast show ' + (type||'');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.className = 'toast'; }, 3500);
   }
-
-  // Close modal on overlay click
-  document.getElementById('modal').addEventListener('click', function(e) {
-    if (e.target === this) closeModal();
-  });
 </script>
 </body>
 </html>
