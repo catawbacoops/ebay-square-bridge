@@ -470,10 +470,19 @@
   }
 
   // ── Queue ─────────────────────────────────────────────────────────────────
+  // Safe fetch-JSON: never throws on empty/non-JSON response
+  async function safeJson(res) {
+    const text = await res.text();
+    if (!text || !text.trim()) return { error: `Server returned empty response (HTTP ${res.status})` };
+    try { return JSON.parse(text); }
+    catch(e) { return { error: `Invalid server response: ${text.substring(0, 120)}` }; }
+  }
+
   async function loadQueue() {
     try {
       const res = await fetch('/api/queue', { headers: { 'x-dashboard-password': PASSWORD } });
-      queueItems = await res.json();
+      queueItems = await safeJson(res);
+      if (!Array.isArray(queueItems)) { console.error('Queue load error:', queueItems); queueItems = []; }
       updateQueueBadge();
       renderQueueView();
       // Poll if any items are still processing
@@ -777,7 +786,7 @@
           quantity: document.getElementById('q-qty-' + id)?.value,
         })
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (data.error) {
         errEl.textContent = data.error;
         btn.disabled = false; btn.textContent = '✓ Approve & List on eBay';
@@ -1027,7 +1036,7 @@
     btn.disabled = true; btn.textContent = 'Listing…';
     try {
       const res = await fetch('/api/ebay/list', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ name: title, description: desc, sku, ebayPrice: price, quantity: qty, categoryId: cat, conditionId: cond, brand, itemType, imageUrl: currentProduct?.imageUrl||'', weightLbs }) });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (data.error) { errEl.textContent = data.error; btn.disabled = false; btn.textContent = 'List on eBay'; return; }
       closeModal(); showToast('Listed! Item ID: ' + data.itemId, 'success');
       loadEbayListings(); refreshSkuStatus();
