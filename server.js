@@ -82,6 +82,122 @@ const EBAY_TO_STORE_CATEGORY = {
 // Populated on first use by fetching the store, then kept in sync.
 let storeCategoryCache = null; // null = not yet loaded
 
+// ── eBay Business Policy cache ────────────────────────────────────────────────
+// Accounts enrolled in Business Policies must use profile IDs instead of
+// legacy ShippingDetails / ReturnPolicy / PaymentMethods fields.
+let sellerProfilesCache = null;
+
+async function getSellerProfiles() {
+  if (sellerProfilesCache) return sellerProfilesCache;
+  try {
+    const xml = create({ version: "1.0", encoding: "utf-8" })
+      .ele("GetUserPreferencesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+        .ele("RequesterCredentials")
+          .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+        .up()
+        .ele("ShowSellerProfilePreferences").txt("true").up()
+      .up()
+      .end({ prettyPrint: false });
+
+    const res = await fetch(EBAY_API_URL, {
+      method: "POST",
+      headers: ebayHeaders("GetUserPreferences"),
+      body: xml,
+    });
+    const parsed = await parseXml(await res.text());
+    const prefs = parsed?.GetUserPreferencesResponse?.SellerProfilePreferences;
+    const profiles = [].concat(prefs?.SupportedSellerProfiles?.SupportedSellerProfile || []);
+
+    let shippingId = null, returnId = null, paymentId = null;
+    profiles.forEach(p => {
+      const type = p.ProfileType;
+      const id = p.ProfileID;
+      const name = (p.ProfileName || "").toLowerCase();
+      // Pick the first of each type — prefer ones with "default" in the name
+      if (type === "SHIPPING" && (!shippingId || name.includes("default"))) shippingId = String(id);
+      if (type === "RETURN_POLICY" && (!returnId || name.includes("default"))) returnId = String(id);
+      if (type === "PAYMENT" && (!paymentId || name.includes("default"))) paymentId = String(id);
+    });
+
+    if (shippingId && returnId && paymentId) {
+      sellerProfilesCache = { shippingId, returnId, paymentId };
+      console.log(`✓ Seller profiles loaded — shipping:${shippingId} return:${returnId} payment:${paymentId}`);
+    } else {
+      console.warn("Could not resolve all seller profile IDs — falling back to legacy fields", { shippingId, returnId, paymentId });
+      sellerProfilesCache = null;
+    }
+    return sellerProfilesCache;
+  } catch(e) {
+    console.error("getSellerProfiles error:", e.message);
+    return null;
+  }
+}
+
+// Build the policy XML block — uses Business Policy IDs if available,
+// falls back to legacy fields for accounts not enrolled in Business Policies.
+async function buildPolicyXml(itemNode, { weightPounds, weightOunces, pkgDepth, pkgWidth, pkgHeight }) {
+  const profiles = await getSellerProfiles();
+
+  if (profiles) {
+    // Business Policies path
+    itemNode = itemNode
+      .ele("SellerProfiles")
+        .ele("SellerShippingProfile")
+          .ele("ShippingProfileID").txt(profiles.shippingId).up()
+        .up()
+        .ele("SellerReturnProfile")
+          .ele("ReturnProfileID").txt(profiles.returnId).up()
+        .up()
+        .ele("SellerPaymentProfile")
+          .ele("PaymentProfileID").txt(profiles.paymentId).up()
+        .up()
+      .up()
+      .ele("ShippingPackageDetails")
+        .ele("MeasurementUnit").txt("English").up()
+        .ele("WeightMajor").txt(String(weightPounds)).up()
+        .ele("WeightMinor").txt(String(weightOunces)).up()
+        .ele("ShippingPackage").txt("ExtraLargePack").up()
+        .ele("ShippingIrregular").txt("true").up()
+      .up();
+  } else {
+    // Legacy fields fallback
+    itemNode = itemNode
+      .ele("ShippingDetails")
+        .ele("ShippingType").txt("Calculated").up()
+        .ele("ShippingServiceOptions")
+          .ele("ShippingServicePriority").txt("1").up()
+          .ele("ShippingService").txt("UPSGround").up()
+        .up()
+        .ele("ShipToLocations").txt("US").up()
+        .ele("CalculatedShippingRate")
+          .ele("PackagingHandlingCosts").txt("0.00").up()
+          .ele("OriginatingPostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
+        .up()
+      .up()
+      .ele("ShippingPackageDetails")
+        .ele("MeasurementUnit").txt("English").up()
+        .ele("WeightMajor").txt(String(weightPounds)).up()
+        .ele("WeightMinor").txt(String(weightOunces)).up()
+        .ele("ShippingPackage").txt("ExtraLargePack").up()
+        .ele("ShippingIrregular").txt("true").up()
+      .up()
+      .ele("ReturnPolicy")
+        .ele("ReturnsAcceptedOption").txt("ReturnsAccepted").up()
+        .ele("RefundOption").txt("MoneyBack").up()
+        .ele("ReturnsWithinOption").txt("Days_30").up()
+        .ele("ShippingCostPaidByOption").txt("Buyer").up()
+      .up()
+      .ele("PaymentMethods").txt("PayPal").up()
+      .ele("PayPalEmailAddress").txt(PAYPAL_EMAIL).up();
+  }
+
+  return itemNode
+    .ele("Location").txt(process.env.SHIP_FROM_CITY || "Myerstown, PA").up()
+    .ele("PostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
+    .ele("Site").txt("US").up();
+}
+
+
 async function loadStoreCategoryCache() {
   const xml = create({ version: "1.0", encoding: "utf-8" })
     .ele("GetStoreRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
@@ -476,37 +592,7 @@ app.post("/api/ebay/list", auth, async (req, res) => {
       .up()
     .up();
 
-  const xml = itemNode
-        .ele("ShippingDetails")
-          .ele("ShippingType").txt("Calculated").up()
-          .ele("ShippingServiceOptions")
-            .ele("ShippingServicePriority").txt("1").up()
-            .ele("ShippingService").txt("UPSGround").up()
-          .up()
-          .ele("ShipToLocations").txt("US").up()
-          .ele("CalculatedShippingRate")
-            .ele("PackagingHandlingCosts").txt("0.00").up()
-            .ele("OriginatingPostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
-          .up()
-        .up()
-        .ele("ShippingPackageDetails")
-          .ele("MeasurementUnit").txt("English").up()
-          .ele("WeightMajor").txt(String(weightPounds)).up()
-          .ele("WeightMinor").txt(String(weightOunces)).up()
-          .ele("ShippingPackage").txt("ExtraLargePack").up()
-          .ele("ShippingIrregular").txt("true").up()
-        .up()
-        .ele("ReturnPolicy")
-          .ele("ReturnsAcceptedOption").txt("ReturnsAccepted").up()
-          .ele("RefundOption").txt("MoneyBack").up()
-          .ele("ReturnsWithinOption").txt("Days_30").up()
-          .ele("ShippingCostPaidByOption").txt("Buyer").up()
-        .up()
-        .ele("PaymentMethods").txt("PayPal").up()
-        .ele("PayPalEmailAddress").txt(PAYPAL_EMAIL).up()
-        .ele("Location").txt(process.env.SHIP_FROM_CITY || "Myerstown, PA").up()
-        .ele("PostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
-        .ele("Site").txt("US").up()
+  const xml = (await buildPolicyXml(itemNode, { weightPounds, weightOunces, pkgDepth, pkgWidth, pkgHeight }))
       .up()
     .up()
     .end({ prettyPrint: false });
@@ -921,37 +1007,7 @@ async function relistOnEbay(entry) {
     itemNode = specs.up();
   }
 
-  const xml = itemNode
-      .ele("ShippingDetails")
-        .ele("ShippingType").txt("Calculated").up()
-        .ele("ShippingServiceOptions")
-          .ele("ShippingServicePriority").txt("1").up()
-          .ele("ShippingService").txt("UPSGround").up()
-        .up()
-        .ele("ShipToLocations").txt("US").up()
-        .ele("CalculatedShippingRate")
-          .ele("PackagingHandlingCosts").txt("0.00").up()
-          .ele("OriginatingPostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
-        .up()
-      .up()
-      .ele("ShippingPackageDetails")
-        .ele("MeasurementUnit").txt("English").up()
-        .ele("WeightMajor").txt(String(weightPounds)).up()
-        .ele("WeightMinor").txt(String(weightOunces)).up()
-        .ele("ShippingPackage").txt("ExtraLargePack").up()
-        .ele("ShippingIrregular").txt("true").up()
-      .up()
-      .ele("ReturnPolicy")
-        .ele("ReturnsAcceptedOption").txt("ReturnsAccepted").up()
-        .ele("RefundOption").txt("MoneyBack").up()
-        .ele("ReturnsWithinOption").txt("Days_30").up()
-        .ele("ShippingCostPaidByOption").txt("Buyer").up()
-      .up()
-      .ele("PaymentMethods").txt("PayPal").up()
-      .ele("PayPalEmailAddress").txt(PAYPAL_EMAIL).up()
-      .ele("Location").txt(process.env.SHIP_FROM_CITY || "Myerstown, PA").up()
-      .ele("PostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
-      .ele("Site").txt("US").up()
+  const xml = (await buildPolicyXml(itemNode, { weightPounds, weightOunces, pkgDepth: 0, pkgWidth: 0, pkgHeight: 0 }))
     .up()
   .up()
   .end({ prettyPrint: false });
@@ -1335,7 +1391,7 @@ Return ONLY valid JSON, no markdown, no explanation.`;
 
   const weightDisplay = weight ? weight + " lb" : "—";
   const imgTag = imageUrl
-    ? `<img src="${imageUrl}" alt="${name}" style="width:100%;border-radius:6px;border:0.5px solid #d4c4a0;display:block;" onerror="this.style.background='#f9f6ef';this.style.minHeight='140px'" />`
+    ? `<img src="${imageUrl}" alt="${name}" style="width:100%;border-radius:6px;border:0.5px solid #d4c4a0;display:block;min-height:80px;" />`
     : `<div style="width:100%;min-height:140px;background:#f9f6ef;border-radius:6px;border:0.5px solid #d4c4a0;"></div>`;
 
   const ingredientsSection = ingredients
@@ -1416,7 +1472,13 @@ Return ONLY valid JSON, no markdown, no explanation.`;
     })
   );
 
-  return { html: sanitizedHtml, about, ingredients };
+  // Strip any JS event handler attributes eBay blocks (on*, javascript:)
+  const noJsHtml = sanitizedHtml
+    .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '')
+    .replace(/\s+on\w+\s*=\s*[^\s>]*/gi, '')
+    .replace(/javascript\s*:/gi, '');
+
+  return { html: noJsHtml, about, ingredients };
 }
 // For each active listing: regenerates branded description via Claude,
 // resolves/creates Store category, and pushes ReviseFixedPriceItem to eBay.
@@ -1989,37 +2051,7 @@ app.post("/api/queue/approve", auth, async (req, res) => {
         .ele("NameValueList").ele("Name").txt("Product").up().ele("Value").txt(finalTitle.substring(0,65)).up().up()
       .up();
 
-    const xml = itemNode
-      .ele("ShippingDetails")
-        .ele("ShippingType").txt("Calculated").up()
-        .ele("ShippingServiceOptions")
-          .ele("ShippingServicePriority").txt("1").up()
-          .ele("ShippingService").txt("UPSGround").up()
-        .up()
-        .ele("ShipToLocations").txt("US").up()
-        .ele("CalculatedShippingRate")
-          .ele("PackagingHandlingCosts").txt("0.00").up()
-          .ele("OriginatingPostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
-        .up()
-      .up()
-      .ele("ShippingPackageDetails")
-        .ele("MeasurementUnit").txt("English").up()
-        .ele("WeightMajor").txt(String(weightPounds)).up()
-        .ele("WeightMinor").txt(String(weightOunces)).up()
-        .ele("ShippingPackage").txt("ExtraLargePack").up()
-        .ele("ShippingIrregular").txt("true").up()
-      .up()
-      .ele("ReturnPolicy")
-        .ele("ReturnsAcceptedOption").txt("ReturnsAccepted").up()
-        .ele("RefundOption").txt("MoneyBack").up()
-        .ele("ReturnsWithinOption").txt("Days_30").up()
-        .ele("ShippingCostPaidByOption").txt("Buyer").up()
-      .up()
-      .ele("PaymentMethods").txt("PayPal").up()
-      .ele("PayPalEmailAddress").txt(PAYPAL_EMAIL).up()
-      .ele("Location").txt(process.env.SHIP_FROM_CITY || "Myerstown, PA").up()
-      .ele("PostalCode").txt(process.env.SHIP_FROM_ZIP || "17067").up()
-      .ele("Site").txt("US").up()
+    const xml = (await buildPolicyXml(itemNode, { weightPounds, weightOunces, pkgDepth: 0, pkgWidth: 0, pkgHeight: 0 }))
       .up().up().end({ prettyPrint: false });
 
     const ebayRes = await fetch(EBAY_API_URL, { method:"POST", headers:ebayHeaders("AddFixedPriceItem"), body:xml });
