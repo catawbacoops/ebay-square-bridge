@@ -1349,7 +1349,7 @@ Return ONLY valid JSON, no markdown, no explanation.`;
   <div style="background:#9b804a;padding:16px 24px;display:flex;align-items:center;gap:16px;">
     <img src="${LOGO_URL}" alt="The Grain Mill Co-op" style="height:60px;width:auto;display:block;" />
     <div style="border-left:0.5px solid #c4a46a;padding-left:16px;">
-      <div style="color:#f2ede3;font-size:13px;font-family:sans-serif;">Bulk Grains &amp; Baking Supplies</div>
+      <div style="color:#f2ede3;font-size:13px;font-family:sans-serif;">Bulk Grains &#38; Baking Supplies</div>
       <div style="color:#d4c4a0;font-size:12px;margin-top:4px;font-family:sans-serif;">Ships UPS Ground from Dutch Amish Country, PA</div>
     </div>
   </div>
@@ -1388,15 +1388,36 @@ Return ONLY valid JSON, no markdown, no explanation.`;
     </div>
   </div>
   <div style="background:#9b804a;padding:13px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-    <span style="color:#f2ede3;font-size:12px;font-family:sans-serif;">The Grain Mill Co-op &middot; 230 S Main St, Wake Forest, NC 27587</span>
-    <span style="color:#d4c4a0;font-size:12px;font-family:sans-serif;">Bulk grains, flours &amp; baking supplies</span>
+    <span style="color:#f2ede3;font-size:12px;font-family:sans-serif;">The Grain Mill Co-op &#183; 230 S Main St, Wake Forest, NC 27587</span>
+    <span style="color:#d4c4a0;font-size:12px;font-family:sans-serif;">Bulk grains, flours &#38; baking supplies</span>
   </div>
 </div>`;
 
-  return { html, about, ingredients };
-}
+  // Sanitize: replace all named HTML entities with numeric equivalents
+  // eBay's XML parser only accepts numeric character references
+  const NAMED_ENTITIES = {
+    '&amp;': '&#38;', '&lt;': '&#60;', '&gt;': '&#62;', '&quot;': '&#34;',
+    '&apos;': '&#39;', '&nbsp;': '&#160;', '&middot;': '&#183;',
+    '&mdash;': '&#8212;', '&ndash;': '&#8211;', '&bull;': '&#8226;',
+    '&hellip;': '&#8230;', '&trade;': '&#8482;', '&reg;': '&#174;',
+    '&copy;': '&#169;', '&laquo;': '&#171;', '&raquo;': '&#187;',
+    '&ldquo;': '&#8220;', '&rdquo;': '&#8221;', '&lsquo;': '&#8216;',
+    '&rsquo;': '&#8217;', '&frac12;': '&#189;', '&frac14;': '&#188;',
+    '&frac34;': '&#190;', '&deg;': '&#176;', '&plusmn;': '&#177;',
+    '&times;': '&#215;', '&divide;': '&#247;', '&euro;': '&#8364;',
+    '&pound;': '&#163;', '&yen;': '&#165;', '&cent;': '&#162;',
+    '&acute;': '&#180;', '&uml;': '&#168;', '&cedil;': '&#184;',
+  };
+  const sanitizedHtml = html.replace(/&[a-zA-Z]+;/g, match =>
+    NAMED_ENTITIES[match] || match.replace(/&([a-zA-Z]+);/, (_, name) => {
+      // Any unknown named entity: strip it to avoid XML parse errors
+      console.warn(`Unknown HTML entity stripped: ${match}`);
+      return '';
+    })
+  );
 
-// ── Bulk Revise: update all active eBay listings ──────────────────────────────
+  return { html: sanitizedHtml, about, ingredients };
+}
 // For each active listing: regenerates branded description via Claude,
 // resolves/creates Store category, and pushes ReviseFixedPriceItem to eBay.
 // Uses SSE so the dashboard can stream live progress.
