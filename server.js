@@ -5,6 +5,8 @@ const fs = require("fs");
 const xml2js = require("xml2js");
 const { create } = require("xmlbuilder2");
 
+const app = express();
+
 // Load weight lookup table (SKU -> weight in lbs)
 let WEIGHT_LOOKUP = {};
 try {
