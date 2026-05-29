@@ -91,39 +91,51 @@ async function getSellerProfiles() {
   if (sellerProfilesCache) return sellerProfilesCache;
   try {
     const xml = create({ version: "1.0", encoding: "utf-8" })
-      .ele("GetUserPreferencesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+      .ele("GetSellerProfilesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
         .ele("RequesterCredentials")
           .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
         .up()
-        .ele("ShowSellerProfilePreferences").txt("true").up()
       .up()
       .end({ prettyPrint: false });
 
     const res = await fetch(EBAY_API_URL, {
       method: "POST",
-      headers: ebayHeaders("GetUserPreferences"),
+      headers: ebayHeaders("GetSellerProfiles"),
       body: xml,
     });
-    const parsed = await parseXml(await res.text());
-    const prefs = parsed?.GetUserPreferencesResponse?.SellerProfilePreferences;
-    const profiles = [].concat(prefs?.SupportedSellerProfiles?.SupportedSellerProfile || []);
+    const rawText = await res.text();
+    console.log("GetSellerProfiles raw response:", rawText.substring(0, 800));
+    const parsed = await parseXml(rawText);
+    const resp = parsed?.GetSellerProfilesResponse;
 
-    let shippingId = null, returnId = null, paymentId = null;
-    profiles.forEach(p => {
-      const type = p.ProfileType;
-      const id = p.ProfileID;
-      const name = (p.ProfileName || "").toLowerCase();
-      // Pick the first of each type — prefer ones with "default" in the name
-      if (type === "SHIPPING" && (!shippingId || name.includes("default"))) shippingId = String(id);
-      if (type === "RETURN_POLICY" && (!returnId || name.includes("default"))) returnId = String(id);
-      if (type === "PAYMENT" && (!paymentId || name.includes("default"))) paymentId = String(id);
-    });
+    // Flatten all profile arrays
+    const shippingProfiles = [].concat(resp?.ShippingProfileList?.ShippingProfile || []);
+    const returnProfiles   = [].concat(resp?.ReturnPolicyProfileList?.ReturnPolicyProfile || []);
+    const paymentProfiles  = [].concat(resp?.PaymentProfileList?.PaymentProfile || []);
+
+    console.log(`Profiles found — shipping:${shippingProfiles.length} return:${returnProfiles.length} payment:${paymentProfiles.length}`);
+
+    // Pick first of each; prefer name containing "default"
+    const pick = (arr, idKey) => {
+      if (!arr.length) return null;
+      const def = arr.find(p => (p.ProfileName||"").toLowerCase().includes("default"));
+      const chosen = def || arr[0];
+      const id = chosen[idKey] || chosen.ProfileID;
+      // id may be an object from xml2js — unwrap it
+      return String(typeof id === "object" ? id?._ || id?.["$t"] || Object.values(id)[0] : id);
+    };
+
+    const shippingId = pick(shippingProfiles, "ShippingProfileID");
+    const returnId   = pick(returnProfiles,   "ReturnPolicyProfileID");
+    const paymentId  = pick(paymentProfiles,  "PaymentProfileID");
+
+    console.log(`Resolved IDs — shipping:${shippingId} return:${returnId} payment:${paymentId}`);
 
     if (shippingId && returnId && paymentId) {
       sellerProfilesCache = { shippingId, returnId, paymentId };
-      console.log(`✓ Seller profiles loaded — shipping:${shippingId} return:${returnId} payment:${paymentId}`);
+      console.log(`✓ Seller profiles cached`);
     } else {
-      console.warn("Could not resolve all seller profile IDs — falling back to legacy fields", { shippingId, returnId, paymentId });
+      console.warn("Could not resolve all seller profile IDs — will use legacy fields", { shippingId, returnId, paymentId });
       sellerProfilesCache = null;
     }
     return sellerProfilesCache;
@@ -1621,11 +1633,14 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
         const reviseResp = reviseParsed?.ReviseFixedPriceItemResponse;
 
         if (reviseResp?.Ack === "Failure") {
-          const errors = [].concat(reviseResp?.Errors || []);
+          const errors = [].concat(reviseResp?.Errors || []).filter(e => e.SeverityCode === "Error" || !e.SeverityCode);
           const msg = errors.map(e => e.ShortMessage).join("; ");
           send({ type: "progress", index: i + 1, total, itemId, title, sku, status: "error", message: msg });
           failed++;
         } else {
+          // Warning = success — log but don't fail
+          const warnings = [].concat(reviseResp?.Errors || []).filter(e => e.SeverityCode === "Warning");
+          if (warnings.length) console.log(`[${itemId}] warnings: ${warnings.map(w => w.ShortMessage).join("; ")}`);
           send({ type: "progress", index: i + 1, total, itemId, title, sku, status: "done",
             storeCat: storeCatId ? (EBAY_TO_STORE_CATEGORY[String(categoryId)] || categoryId) : null });
           succeeded++;
@@ -2123,4 +2138,8 @@ app.post("/api/queue/retry", auth, async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`eBay-Square bridge running on port ${PORT}`);
+  // Pre-load seller profiles on boot so the raw API response appears in logs
+  setTimeout(() => {
+    getSellerProfiles().catch(e => console.error("Startup profile fetch error:", e.message));
+  }, 3000);
 });
