@@ -1172,17 +1172,17 @@
         <td style="color:#555566;font-size:12px;">${esc(l.sku||'—')}</td>
         <td style="color:#3ecf8e;font-weight:600;">$${(l.ebayPrice||0).toFixed(2)}</td>
         <td style="color:#6e6e82;font-size:12px;">${l.weightLbs?l.weightLbs+' lb':'—'}</td>
-        <td><button class="relist-btn" onclick="relistItem('${esc(l.sku)}',this)">↺ Relist</button></td>
+        <td><button class="relist-btn" onclick="relistItem('${esc(l.sku)}','${esc(l.itemId||'')}',this)">↺ Relist</button></td>
       </tr>`;
     }).join('') + '</tbody></table>';
   }
 
-  async function relistItem(sku, btn) {
+  async function relistItem(sku, itemId, btn) {
     if (!confirm('Relist "' + sku + '" on eBay now?')) return;
     btn.disabled = true; btn.textContent = 'Relisting…';
     try {
-      const res = await fetch('/api/ebay/relist', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ sku }) });
-      const data = await res.json();
+      const res = await fetch('/api/ebay/relist', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ sku, itemId }) });
+      const data = await safeJson(res);
       if (data.error) { showToast('Relist failed: ' + data.error, 'error'); btn.disabled = false; btn.textContent = '↺ Relist'; return; }
       showToast('✓ Relisted! Item ID: ' + data.itemId, 'success');
       loadEndedListings(); loadEbayListings();
