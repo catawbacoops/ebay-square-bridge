@@ -633,6 +633,9 @@ app.post("/api/ebay/list", auth, async (req, res) => {
       return res.status(400).json({ error: msg });
     }
 
+    // Invalidate active listings cache so Search & Add reflects the new listing immediately
+    activeListingsCache = null;
+
     res.json({
       success: true,
       itemId: resp?.ItemID,
@@ -893,9 +896,10 @@ async function removeUnsellableFromEbay() {
         const item = getParsed?.GetItemResponse?.Item;
 
         if (item) {
+          const unwrap = v => v == null ? "" : typeof v === "object" ? (v?._ || v?.["$t"] || Object.values(v)[0] || "") : String(v);
           const specs = [].concat(item.ItemSpecifics?.NameValueList || []);
-          const brand = specs.find(s => s.Name === "Brand")?.Value || "";
-          const itemType = specs.find(s => s.Name === "Type")?.Value || "";
+          const brand = unwrap(specs.find(s => unwrap(s.Name) === "Brand")?.Value) || "";
+          const itemType = unwrap(specs.find(s => unwrap(s.Name) === "Type")?.Value) || "";
           const rawMaj = item.ShippingPackageDetails?.WeightMajor;
           const rawMin = item.ShippingPackageDetails?.WeightMinor;
           const wMajor = parseInt((typeof rawMaj === "object" ? rawMaj?._ || rawMaj?.["$t"] || "0" : rawMaj) || "0");
@@ -903,15 +907,15 @@ async function removeUnsellableFromEbay() {
           let weightLbs = wMajor > 0 ? parseFloat((wMajor + wMinor / 16).toFixed(3)) : 0;
           if (!weightLbs && sku && WEIGHT_LOOKUP[sku]) weightLbs = WEIGHT_LOOKUP[sku];
           if (!weightLbs && title) { const m = title.match(/(\d+(?:\.\d+)?)\s*lb/i); if (m) weightLbs = parseFloat(m[1]); }
-          const imageUrl = item.PictureDetails?.PictureURL || "";
-          const description = item.Description || "";
-          const categoryId = item.PrimaryCategory?.CategoryID || "";
-          const conditionId = item.ConditionID || "1000";
+          const imageUrl = unwrap([].concat(item.PictureDetails?.PictureURL || [])[0]) || "";
+          const description = unwrap(item.Description) || "";
+          const categoryId = unwrap(item.PrimaryCategory?.CategoryID) || "";
+          const conditionId = unwrap(item.ConditionID) || "1000";
 
           savedEntry = {
             sku, itemId, title,
-            ebayPrice: parseFloat(item.StartPrice?.["_"] || item.StartPrice || ebayPrice),
-            quantity: parseInt(item.Quantity || quantity),
+            ebayPrice: parseFloat(unwrap(item.StartPrice) || ebayPrice) || ebayPrice,
+            quantity: parseInt(unwrap(item.Quantity) || quantity) || quantity,
             brand, itemType, weightLbs, imageUrl, description,
             categoryId, conditionId,
           };
@@ -1236,20 +1240,25 @@ app.post("/api/ebay/relist", auth, async (req, res) => {
         if (!weightLbs && WEIGHT_LOOKUP[sku]) weightLbs = WEIGHT_LOOKUP[sku];
         if (!weightLbs) { const m = (item.Title||"").match(/(\d+(?:\.\d+)?)\s*lb/i); if (m) weightLbs = parseFloat(m[1]); }
 
+        // Helper to unwrap xml2js objects to plain string
+        const unwrap = v => v == null ? "" : typeof v === "object" ? (v?._ || v?.["$t"] || Object.values(v)[0] || "") : String(v);
+
         entry = {
           sku,
           itemId,
-          title: item.Title || sku,
-          ebayPrice: parseFloat(item.BuyItNowPrice?._ || item.BuyItNowPrice || item.StartPrice?._ || item.StartPrice || 0),
-          quantity: parseInt(item.Quantity || 5),
-          brand: specs.find(s => s.Name === "Brand")?.Value || "Unbranded",
-          itemType: specs.find(s => s.Name === "Type")?.Value || "",
+          title: unwrap(item.Title) || sku,
+          ebayPrice: parseFloat(unwrap(item.BuyItNowPrice) || unwrap(item.StartPrice) || "0") || 0,
+          quantity: parseInt(unwrap(item.Quantity) || "5") || 5,
+          brand: specs.find(s => unwrap(s.Name) === "Brand") ? unwrap(specs.find(s => unwrap(s.Name) === "Brand").Value) : "Unbranded",
+          itemType: specs.find(s => unwrap(s.Name) === "Type") ? unwrap(specs.find(s => unwrap(s.Name) === "Type").Value) : "",
           weightLbs: weightLbs || 1,
-          imageUrl: [].concat(item.PictureDetails?.PictureURL || [])[0] || "",
-          description: item.Description || "",
-          categoryId: item.PrimaryCategory?.CategoryID || "79631",
-          conditionId: item.ConditionID || "1000",
+          imageUrl: unwrap([].concat(item.PictureDetails?.PictureURL || [])[0]) || "",
+          description: unwrap(item.Description) || "",
+          categoryId: unwrap(item.PrimaryCategory?.CategoryID) || "79631",
+          conditionId: unwrap(item.ConditionID) || "1000",
         };
+
+        console.log(`Relist entry built — title:"${entry.title}" price:${entry.ebayPrice} weight:${entry.weightLbs}`);
       }
     } catch(e) {
       console.error("GetItem for relist failed:", e.message);
@@ -1882,58 +1891,71 @@ app.get("/api/ebay/listings", auth, async (req, res) => {
 // ── eBay: check if SKUs are listed (also returns current eBay price) ─────────
 // POST { skus: ["155009", "155010", ...] }
 // Returns { "155009": { itemId: "123456", ebayPrice: 31.75 }, ... }
-app.post("/api/ebay/check-listed", auth, async (req, res) => {
-  const { skus } = req.body;
-  if (!skus || !skus.length) return res.json({});
+// ── Active listings cache — refreshed on demand, max once per 2 minutes ───────
+let activeListingsCache = null;
+let activeListingsCacheTime = 0;
+const ACTIVE_CACHE_TTL = 2 * 60 * 1000;
 
-  const skuSet = new Set(skus.map(String));
-  const result = {};
-  skus.forEach(s => { result[String(s)] = null; });
-
-  try {
-    for (let page = 1; page <= 4; page++) {
-      const xml = create({ version: "1.0", encoding: "utf-8" })
-        .ele("GetMyeBaySellingRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
-          .ele("RequesterCredentials")
-            .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
-          .up()
-          .ele("ActiveList")
-            .ele("Include").txt("true").up()
-            .ele("Pagination")
-              .ele("EntriesPerPage").txt("50").up()
-              .ele("PageNumber").txt(String(page)).up()
-            .up()
-          .up()
-          .ele("DetailLevel").txt("ReturnAll").up()
+async function getActiveListingsMap(force = false) {
+  const now = Date.now();
+  if (!force && activeListingsCache && (now - activeListingsCacheTime) < ACTIVE_CACHE_TTL) {
+    return activeListingsCache;
+  }
+  const map = {};
+  for (let page = 1; page <= 20; page++) {
+    const xml = create({ version: "1.0", encoding: "utf-8" })
+      .ele("GetMyeBaySellingRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+        .ele("RequesterCredentials")
+          .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
         .up()
-        .end({ prettyPrint: false });
+        .ele("ActiveList")
+          .ele("Include").txt("true").up()
+          .ele("Pagination")
+            .ele("EntriesPerPage").txt("200").up()
+            .ele("PageNumber").txt(String(page)).up()
+          .up()
+        .up()
+        .ele("DetailLevel").txt("ReturnAll").up()
+      .up()
+      .end({ prettyPrint: false });
 
-      const ebayRes = await fetch(EBAY_API_URL, {
-        method: "POST",
-        headers: ebayHeaders("GetMyeBaySelling"),
-        body: xml,
-      });
-      const parsed = await parseXml(await ebayRes.text());
-      const resp = parsed?.GetMyeBaySellingResponse;
-      const items = [].concat(resp?.ActiveList?.ItemArray?.Item || []);
+    const ebayRes = await fetch(EBAY_API_URL, {
+      method: "POST",
+      headers: ebayHeaders("GetMyeBaySelling"),
+      body: xml,
+    });
+    const parsed = await parseXml(await ebayRes.text());
+    const resp = parsed?.GetMyeBaySellingResponse;
+    const items = [].concat(resp?.ActiveList?.ItemArray?.Item || []);
+    items.forEach(item => {
+      const sku = String(item.SKU || "");
+      if (sku) {
+        const price = parseFloat(
+          item.SellingStatus?.CurrentPrice?._ ||
+          item.BuyItNowPrice?._ ||
+          item.StartPrice?._ || "0"
+        );
+        map[sku] = { itemId: item.ItemID, ebayPrice: price };
+      }
+    });
+    const totalPages = parseInt(resp?.ActiveList?.PaginationResult?.TotalNumberOfPages || "1");
+    if (page >= totalPages || !items.length) break;
+  }
+  activeListingsCache = map;
+  activeListingsCacheTime = Date.now();
+  console.log(`Active listings cache refreshed — ${Object.keys(map).length} SKUs`);
+  return map;
+}
 
-      items.forEach(item => {
-        const sku = String(item.SKU || "");
-        if (skuSet.has(sku)) {
-          const price = parseFloat(
-            item.SellingStatus?.CurrentPrice?.["_"] ||
-            item.BuyItNowPrice?.["_"] ||
-            item.StartPrice?.["_"] || "0"
-          );
-          result[sku] = { itemId: item.ItemID, ebayPrice: price };
-        }
-      });
-
-      const totalPages = parseInt(resp?.ActiveList?.PaginationResult?.TotalNumberOfPages || "1");
-      if (page >= totalPages) break;
-    }
+app.post("/api/ebay/check-listed", auth, async (req, res) => {
+  const { skus, force } = req.body;
+  if (!skus || !skus.length) return res.json({});
+  try {
+    const map = await getActiveListingsMap(force === true);
+    const result = {};
+    skus.forEach(s => { result[String(s)] = map[String(s)] || null; });
     res.json(result);
-  } catch (e) {
+  } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
@@ -2005,6 +2027,7 @@ app.post("/api/ebay/end-listing", auth, async (req, res) => {
       return res.status(400).json({ error: errors.map(e => e.LongMessage || e.ShortMessage).join("; ") });
     }
 
+    activeListingsCache = null;
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -2238,6 +2261,7 @@ app.post("/api/queue/approve", auth, async (req, res) => {
     }
 
     queueUpdate(id, { status: "approved", itemId: resp?.ItemID });
+    activeListingsCache = null;
     res.json({ success: true, itemId: resp?.ItemID });
   } catch(e) {
     res.status(500).json({ error: e.message });
