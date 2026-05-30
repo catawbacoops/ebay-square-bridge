@@ -89,60 +89,25 @@ let sellerProfilesCache = null;
 
 async function getSellerProfiles() {
   if (sellerProfilesCache) return sellerProfilesCache;
-  try {
-    const xml = create({ version: "1.0", encoding: "utf-8" })
-      .ele("GetSellerProfilesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
-        .ele("RequesterCredentials")
-          .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
-        .up()
-      .up()
-      .end({ prettyPrint: false });
 
-    const res = await fetch(EBAY_API_URL, {
-      method: "POST",
-      headers: ebayHeaders("GetSellerProfiles"),
-      body: xml,
-    });
-    const rawText = await res.text();
-    console.log("GetSellerProfiles raw response:", rawText.substring(0, 800));
-    const parsed = await parseXml(rawText);
-    const resp = parsed?.GetSellerProfilesResponse;
+  // Business Policy IDs must be set as environment variables.
+  // Find them in eBay Seller Hub → Shipping / Returns / Payments policy pages.
+  // The ID appears in the URL when you edit a policy: e.g. policyId=XXXXXXXXXX
+  const shippingId = process.env.EBAY_SHIPPING_POLICY_ID || null;
+  const returnId   = process.env.EBAY_RETURN_POLICY_ID   || null;
+  const paymentId  = process.env.EBAY_PAYMENT_POLICY_ID  || null;
 
-    // Flatten all profile arrays
-    const shippingProfiles = [].concat(resp?.ShippingProfileList?.ShippingProfile || []);
-    const returnProfiles   = [].concat(resp?.ReturnPolicyProfileList?.ReturnPolicyProfile || []);
-    const paymentProfiles  = [].concat(resp?.PaymentProfileList?.PaymentProfile || []);
-
-    console.log(`Profiles found — shipping:${shippingProfiles.length} return:${returnProfiles.length} payment:${paymentProfiles.length}`);
-
-    // Pick first of each; prefer name containing "default"
-    const pick = (arr, idKey) => {
-      if (!arr.length) return null;
-      const def = arr.find(p => (p.ProfileName||"").toLowerCase().includes("default"));
-      const chosen = def || arr[0];
-      const id = chosen[idKey] || chosen.ProfileID;
-      // id may be an object from xml2js — unwrap it
-      return String(typeof id === "object" ? id?._ || id?.["$t"] || Object.values(id)[0] : id);
-    };
-
-    const shippingId = pick(shippingProfiles, "ShippingProfileID");
-    const returnId   = pick(returnProfiles,   "ReturnPolicyProfileID");
-    const paymentId  = pick(paymentProfiles,  "PaymentProfileID");
-
-    console.log(`Resolved IDs — shipping:${shippingId} return:${returnId} payment:${paymentId}`);
-
-    if (shippingId && returnId && paymentId) {
-      sellerProfilesCache = { shippingId, returnId, paymentId };
-      console.log(`✓ Seller profiles cached`);
-    } else {
-      console.warn("Could not resolve all seller profile IDs — will use legacy fields", { shippingId, returnId, paymentId });
-      sellerProfilesCache = null;
-    }
-    return sellerProfilesCache;
-  } catch(e) {
-    console.error("getSellerProfiles error:", e.message);
-    return null;
+  if (shippingId && returnId && paymentId) {
+    sellerProfilesCache = { shippingId, returnId, paymentId };
+    console.log(`✓ Business policies loaded — shipping:${shippingId} return:${returnId} payment:${paymentId}`);
+  } else {
+    console.warn(
+      "Business Policy IDs not configured — falling back to legacy fields.\n" +
+      "Fix: set EBAY_SHIPPING_POLICY_ID, EBAY_RETURN_POLICY_ID, EBAY_PAYMENT_POLICY_ID in Render env vars."
+    );
+    sellerProfilesCache = null;
   }
+  return sellerProfilesCache;
 }
 
 // Build the policy XML block — uses Business Policy IDs if available,
@@ -1210,11 +1175,10 @@ app.post("/api/ebay/relist", auth, async (req, res) => {
   const { sku, itemId } = req.body;
   if (!sku) return res.status(400).json({ error: "sku required" });
 
-  // Try local store first
-  let entry = loadEndedListings()[sku] || null;
+  // Always prefer live eBay data when itemId available — local file may be stale
+  let entry = null;
 
-  // If not in local store, fetch from eBay by itemId
-  if (!entry && itemId) {
+  if (itemId) {
     try {
       const xml = create({ version: "1.0", encoding: "utf-8" })
         .ele("GetItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
@@ -1262,6 +1226,15 @@ app.post("/api/ebay/relist", auth, async (req, res) => {
       }
     } catch(e) {
       console.error("GetItem for relist failed:", e.message);
+    }
+  }
+
+  // Fall back to local file only if live eBay fetch failed
+  if (!entry) {
+    const localEntry = loadEndedListings()[sku];
+    if (localEntry && localEntry.title && localEntry.ebayPrice) {
+      entry = localEntry;
+      console.log(`Relist using local file fallback for SKU ${sku}`);
     }
   }
 
