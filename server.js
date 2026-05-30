@@ -50,32 +50,78 @@ function removeEndedListing(sku) {
 // Maps eBay marketplace category IDs to exact-mirror Store category names.
 // Store categories are created on demand via SetStoreCategories if they don't exist.
 const EBAY_TO_STORE_CATEGORY = {
-  "257993": "Grains & Rice",
-  "14923": "Flour & Cornmeal",
-  "257958": "Breakfast Cereals & Oats",
-  "257991": "Dried Beans & Pulses",
-  "257952": "Yeast, Leavening & Binders",
-  "257951": "Sugar & Sweeteners",
-  "258012": "Dried Fruit & Nuts",
-  "257944": "Bread & Pastry Mixes",
-  "257945": "Cake & Cupcake Mixes",
-  "257946": "Cookie & Brownie Mixes",
-  "257989": "Cooking Oils",
-  "257978": "Salt",
-  "257977": "Pepper & Chili",
-  "257980": "Spices",
-  "257979": "Seasoning Mixes & Blends",
-  "257983": "Honey",
-  "257984": "Jam, Jelly & Preserves",
-  "257985": "Nut Butters",
-  "257988": "Longlife Cooking & Baking Fats",
-  "258013": "Popcorn",
-  "257995": "Prepared Food & Ready Meals",
-  "257971": "Freeze-dried & Dehydrated Foods",
+  // Verified from isoldwhat.com (live eBay data) - May 2026
+  // Path: Home & Garden (11700) > Food & Beverages (14308) > Pantry (257942)
+
+  // --- PANTRY parent ---
+  "257942": "Pantry",
+
+  // --- Pasta, Grains & Cereals (257990) subcategories ---
+  "257990": "Pasta, Grains & Cereals",     // parent
+  "257993": "Grains & Cereals",             // leaf - whole grains, wheat berries
+  "257994": "Pasta & Noodles",              // leaf
+  "257996": "Rice",                         // leaf
+
+  // --- Baking & Desserts (257943) subcategories ---
+  "257943": "Baking & Desserts",            // parent
+  "257947": "Baking Chocolate",             // leaf
+  "257948": "Baking Dessert Syrup",         // leaf
+  "257949": "Baking Mixes",                 // leaf - bread/cake/cookie mixes
+  "257950": "Baking Nuts & Seeds",          // leaf
+  "257951": "Sugar & Sweeteners",           // leaf
+  "257952": "Yeast & Leavening Agents",     // leaf
+  "257953": "Icing & Cake Decorations",     // leaf
+  "257954": "Extracts & Flavoring",         // leaf - THIS is where flour was going!
+  "257955": "Marzipan & Fondant",           // leaf
+
+  // --- Breakfast Cereals ---
+  "257958": "Breakfast Cereals, Muesli & Oats", // leaf
+
+  // --- Herbs, Spices & Seasonings (257975) ---
+  "257975": "Herbs, Spices & Seasonings",   // parent
+  "257976": "Dried Herbs",                  // leaf
+  "257977": "Single Spices",                // leaf - individual spices
+  "257978": "Salt",                         // leaf
+  "257979": "Spice Mixes",                  // leaf - seasoning blends
+
+  // --- Condiments & Sauces (257960) ---
+  "257960": "Condiments & Sauces",          // parent
+  "257961": "Cooking Sauces",               // leaf
+  "257962": "Ketchup",                      // leaf
+  "257963": "Mayonnaise",                   // leaf
+  "257964": "Mustard",                      // leaf
+  "257965": "Vinegar",                      // leaf
+
+  // --- Jam, Honey & Spreads (257982) ---
+  "257982": "Jam, Honey & Spreads",         // parent
+  "257983": "Honey",                        // leaf
+  "257984": "Jam & Marmalade",              // leaf
+  "257985": "Nut Butters",                  // leaf - peanut butter, almond butter
+  "257986": "Yeast Extracts & Spreads",     // leaf
+
+  // --- Other Pantry leaf categories ---
+  "257988": "Longlife Cooking & Baking Fats",  // leaf - ghee, butter powder, shortening
+  "257989": "Cooking Oils & Serving Oils",     // leaf
+  "257987": "Coconut Milk & Cream",            // leaf
+  "257995": "Prepared Food & Ready Meals",     // parent
+  "257998": "Prepared Soups",                  // leaf
+  "257999": "Canned Goods",                    // leaf
+  "258010": "Snacks",                          // parent
+  "258012": "Dried Fruit & Nuts",              // leaf
+  "258013": "Popcorn",                         // leaf
+  "258503": "Crackers & Crispbread",           // leaf
+  "257959": "Cereal & Breakfast Bars",         // leaf
+
+  // --- Fruits & Vegetable (257971) ---
+  "257971": "Fruits & Vegetable",           // parent - includes freeze-dried/dehydrated
+
+  // --- Food & Beverages other ---
+  "79631":  "Other Food & Beverages",       // leaf - confirmed ✓
+
+  // --- Non-food (Food Storage, Equipment) ---
   "20626":  "Food Storage",
   "184638": "Grain Mills & Food Mills",
   "133696": "Food Dehydrators",
-  "79631":  "Other Food & Beverages",
 };
 
 // In-memory cache: Store category name -> Store category ID
@@ -714,56 +760,47 @@ app.get("/api/test/categories", async (req, res) => {
 
 app.get("/api/ebay/food-categories", auth, async (req, res) => {
   try {
-    const xml = create({ version: "1.0", encoding: "utf-8" })
-      .ele("GetCategoriesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
-        .ele("RequesterCredentials")
-          .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
-        .up()
-        .ele("CategoryParent").txt("14308").up()
-        .ele("LevelLimit").txt("2").up()
-        .ele("DetailLevel").txt("ReturnAll").up()
-      .up()
-      .end({ prettyPrint: false });
+    // Fetch from isoldwhat.com which scrapes eBay nightly — most reliable source
+    // eBay's own GetCategories API is blocked at their CDN for this app
+    const response = await fetch(
+      "https://www.isoldwhat.com/?1=1&RootID=11700&L2C=14308&L3C=257942",
+      { headers: { "User-Agent": "Mozilla/5.0 (compatible; GrainMillBot/1.0)" } }
+    );
+    const html = await response.text();
 
-    console.log("food-categories XML:", xml.substring(0, 300));
-
-    const ebayRes = await fetch(EBAY_API_URL, {
-      method: "POST",
-      headers: ebayHeaders("GetCategories"),
-      body: xml,
-    });
-    const rawText = await ebayRes.text();
-    console.log("food-categories HTTP status:", ebayRes.status);
-    console.log("food-categories raw (first 400):", rawText.substring(0, 400));
-
-    if (ebayRes.status !== 200) {
-      return res.status(502).json({ error: `eBay returned HTTP ${ebayRes.status}`, raw: rawText.substring(0, 300) });
+    // Parse category IDs and names from isoldwhat anchor tags
+    // Format: [Category Name](url#NNNNN) # NNNNN (leaf) or just # NNNNN
+    const categories = [];
+    const seen = new Set();
+    const lineRegex = /\[([^\]]+)\][^\n#]*#\s*(\d{4,6})(?:\s*\(leaf\))?/g;
+    let m;
+    while ((m = lineRegex.exec(html)) !== null) {
+      const name = m[1].replace(/\s+/g, ' ').trim();
+      const id = m[2];
+      if (!seen.has(id) && parseInt(id) > 14000) {
+        seen.add(id);
+        const isLeaf = html.includes(`#${id} *(leaf)*`) || html.includes(`#${id} (leaf)`);
+        categories.push({ id, name, isLeaf });
+      }
     }
 
-    const parsed = await parseXml(rawText);
-    const cats = [].concat(parsed?.GetCategoriesResponse?.CategoryArray?.Category || []);
-    console.log(`food-categories: parsed ${cats.length} categories`);
-
     const ourMappedIds = new Set(Object.keys(EBAY_TO_STORE_CATEGORY));
-
-    const result = cats
-      .map(c => ({
-        id:       String(c.CategoryID || ""),
-        name:     String(c.CategoryName || ""),
-        level:    parseInt(c.CategoryLevel || "0"),
-        parentId: String(c.CategoryParentID || ""),
-        isLeaf:   c.LeafCategory === "true" || c.LeafCategory === true,
-        inOurMap: ourMappedIds.has(String(c.CategoryID)),
-      }))
-      .filter(c => c.id && c.name && c.id !== "14308")
+    const result = categories
+      .map(c => ({ ...c, inOurMap: ourMappedIds.has(c.id) }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
+    console.log(`food-categories: found ${result.length} categories from isoldwhat.com`);
     res.json({ categories: result, ourMappedIds: [...ourMappedIds] });
   } catch(e) {
     console.error("food-categories error:", e.message);
-    res.status(500).json({ error: e.message });
+    // Fallback: return our known map as static data so UI still works
+    const ourMappedIds = Object.keys(EBAY_TO_STORE_CATEGORY);
+    const fallback = ourMappedIds.map(id => ({
+      id, name: EBAY_TO_STORE_CATEGORY[id], isLeaf: true, inOurMap: true
+    })).sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ categories: fallback, ourMappedIds, fallback: true });
   }
-});
+})
 
 
 // ── POST update a single category mapping ─────────────────────────────────────
@@ -1571,7 +1608,7 @@ app.post("/webhook/ebay-account-deletion", (req, res) => {
 app.post("/api/claude/autofill", auth, async (req, res) => {
   const { name, description, weight } = req.body;
 
-  const prompt = "You are an eBay listing expert for a grain mill and whole foods store. Given a product name and description, return ONLY a JSON object with these fields:\n- categoryId: the best eBay US category ID (number as string)\n- brand: brand name from the product (or Unbranded)\n- type: short product type for eBay item specifics\n- weight: weight in lbs as a number (use provided weight, or extract from name, or null)\n- categoryName: human readable category name\n- categoryRationale: one short sentence explaining why this category was chosen (e.g. \"Matches Grains & Rice — whole unground wheat kernel product\")\n\nProduct name: " + name + "\nDescription: " + (description || "None") + "\nKnown weight (lbs): " + (weight || "unknown") + "\n\nCategory IDs to use:\n257993: Grains & Rice - whole unground grain kernels (wheat berries, corn, barley, millet, quinoa, rye, buckwheat, spelt berries)\n14923: Flour & Cornmeal - already ground into flour (all-purpose, bread, wheat, spelt, rye, almond, coconut flour)\n257958: Breakfast Cereals & Oats - oats, oatmeal, granola, grits, farina, hot cereals\n257952: Yeast Leavening & Binders - yeast, baking powder, baking soda, cream of tartar, xanthan gum\n257951: Sugar & Sweeteners - sugar, honey, maple syrup, molasses, stevia\n257944: Bread & Pastry Mixes\n257945: Cake & Cupcake Mixes\n257946: Cookie & Brownie Mixes\n257989: Cooking Oils - olive oil, coconut oil, vegetable oil\n257978: Salt - sea salt, kosher salt, himalayan, canning salt\n257977: Pepper & Chili - black pepper, cayenne, paprika, chili powder\n257980: Spices - cinnamon, cumin, turmeric, nutmeg\n257979: Seasoning Mixes & Blends\n257983: Honey\n257984: Jam Jelly & Preserves\n257985: Nut Butters - peanut butter, almond butter, tahini\n257991: Dried Beans & Pulses - beans, lentils, split peas, chickpeas\n257988: Longlife Cooking & Baking Fats - butter powder, shortening, ghee\n258012: Dried Fruit & Nuts - raisins, dried fruit, nuts, seeds, trail mix\n258013: Popcorn kernels\n257995: Prepared Food & Ready Meals - mixes, soup mixes\n257971: Freeze-dried or Dehydrated Fruits & Vegetables\n20626: Food Storage - mylar bags, vacuum seal bags, oxygen absorbers, mason jars, buckets, canning supplies, storage containers\n184638: Grain Mills & Food Mills - manual or electric grain mills, wheat grinders\n133696: Food Dehydrators\n79631: Other Food & Beverages - anything food that does not fit above\n\nReturn ONLY valid JSON, no markdown, no explanation.";
+  const prompt = "You are an eBay listing expert for a grain mill and whole foods store. Given a product name and description, return ONLY a JSON object with these fields:\n- categoryId: the best eBay US category ID (number as string)\n- brand: brand name from the product (or Unbranded)\n- type: short product type for eBay item specifics\n- weight: weight in lbs as a number (use provided weight, or extract from name, or null)\n- categoryName: human readable category name\n- categoryRationale: one short sentence explaining why this category was chosen (e.g. \"Matches Grains & Rice — whole unground wheat kernel product\")\n\nProduct name: " + name + "\nDescription: " + (description || "None") + "\nKnown weight (lbs): " + (weight || "unknown") + "\n\nCategory IDs to use:\n257993: Grains & Cereals - whole unground grain kernels ONLY (wheat berries, corn, barley, millet, quinoa, rye, buckwheat, spelt berries, groats) - USE THIS for whole grains\n257949: Baking Mixes - bread mixes, cake mixes, cookie mixes, pancake mixes\n257952: Yeast & Leavening Agents - yeast, baking powder, baking soda, cream of tartar, xanthan gum\n257951: Sugar & Sweeteners - sugar, honey powder, maple syrup, molasses, stevia\n257958: Breakfast Cereals Muesli & Oats - oats, oatmeal, granola, grits, farina, hot cereals\n257989: Cooking Oils & Serving Oils - olive oil, coconut oil, vegetable oil\n257988: Longlife Cooking & Baking Fats - butter powder, shortening, ghee, lard\n257977: Single Spices - individual spices, salt, pepper, paprika, cinnamon, turmeric\n257979: Spice Mixes - seasoning blends, mixed spices\n257978: Salt - sea salt, kosher salt, himalayan, canning salt\n257975: Herbs Spices & Seasonings - dried herbs, general seasonings\n257983: Honey - pure honey, raw honey\n257984: Jam & Marmalade - jam, jelly, preserves\n257985: Nut Butters - peanut butter, almond butter, tahini, seed butters\n257982: Jam Honey & Spreads - general spreads parent\n257990: Pasta Grains & Cereals - parent category for grains and pasta\n258012: Dried Fruit & Nuts - raisins, dried fruit, nuts, seeds, trail mix\n258013: Popcorn - popcorn kernels\n257995: Prepared Food & Ready Meals - mixes, soup mixes, ready meals\n257971: Fruits & Vegetable - freeze-dried or dehydrated fruits and vegetables\n20626: Food Storage - mylar bags, vacuum seal bags, oxygen absorbers, mason jars, buckets, canning supplies\n184638: Grain Mills & Food Mills - manual or electric grain mills, wheat grinders\n133696: Food Dehydrators - food dehydrators\n79631: Other Food & Beverages - anything food that does not fit above\nIMPORTANT: Do NOT use 257947 (Extracts & Flavoring) or 257954 (Extracts & Flavoring) for flour or grains. Flour goes in 257949 (Baking Mixes) or 257993 (Grains & Cereals) depending on whether it is already ground.\n\nReturn ONLY valid JSON, no markdown, no explanation.";
 
   try {
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -2228,7 +2265,7 @@ async function processQueueItem(id) {
             "- weight: weight in lbs as number or null\n- categoryName: human readable name\n" +
             "- categoryRationale: one short sentence explaining category choice\n\n" +
             "Product: " + name + "\nDescription: " + (description||"None") + "\nWeight: " + (weight||"unknown") + "\n\n" +
-            "Categories:\n257993: Grains & Rice\n257947: Flour\n257958: Breakfast Cereals & Oats\n" +
+            "Categories:\n257993: Grains & Cereals (whole unground grains)\n257949: Baking Mixes (flour, bread mix, cake mix)\n257952: Yeast & Leavening Agents\n257951: Sugar & Sweeteners\n257958: Breakfast Cereals Muesli & Oats\n257977: Single Spices\n257979: Spice Mixes\n257983: Honey\n257985: Nut Butters\n257988: Longlife Cooking & Baking Fats\n257989: Cooking Oils\n258012: Dried Fruit & Nuts\n257990: Pasta Grains & Cereals\n257995: Prepared Food\n257971: Fruits & Vegetable\n20626: Food Storage\n184638: Grain Mills\n79631: Other Food\n" +
             "257952: Yeast, Leavening & Binders\n257951: Sugar & Sweeteners\n257944: Bread & Pastry Mixes\n" +
             "257945: Cake & Cupcake Mixes\n257946: Cookie & Brownie Mixes\n257989: Cooking Oils\n" +
             "257978: Salt\n257977: Pepper & Chili\n257980: Spices\n257979: Seasoning Mixes & Blends\n" +
