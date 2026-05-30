@@ -51,7 +51,7 @@ function removeEndedListing(sku) {
 // Store categories are created on demand via SetStoreCategories if they don't exist.
 const EBAY_TO_STORE_CATEGORY = {
   "257993": "Grains & Rice",
-  "257947": "Flour",
+  "14923": "Flour & Cornmeal",
   "257958": "Breakfast Cereals & Oats",
   "257991": "Dried Beans & Pulses",
   "257952": "Yeast, Leavening & Binders",
@@ -612,6 +612,36 @@ app.post("/api/ebay/list", auth, async (req, res) => {
 });
 
 // ── eBay: get categories (for dropdown) ─────────────────────────────────────
+// ── GET verify a single category ID — returns its actual name from eBay ───────
+app.get("/api/ebay/category-name", auth, async (req, res) => {
+  const { id } = req.query;
+  if (!id) return res.status(400).json({ error: "id required" });
+  try {
+    const xml = create({ version: "1.0", encoding: "utf-8" })
+      .ele("GetCategoriesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+        .ele("RequesterCredentials")
+          .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+        .up()
+        .ele("CategoryParent").txt(String(id)).up()
+        .ele("LevelLimit").txt("1").up()
+        .ele("ViewAllNodes").txt("true").up()
+      .up()
+      .end({ prettyPrint: false });
+
+    const ebayRes = await fetch(EBAY_API_URL, { method: "POST", headers: ebayHeaders("GetCategories"), body: xml });
+    const parsed = await parseXml(await ebayRes.text());
+    const cats = [].concat(parsed?.GetCategoriesResponse?.CategoryArray?.Category || []);
+    const match = cats.find(c => String(c.CategoryID) === String(id));
+    if (match) {
+      res.json({ id: match.CategoryID, name: match.CategoryName, leaf: match.LeafCategory });
+    } else {
+      res.json({ id, name: "Not found", leaf: false });
+    }
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get("/api/ebay/categories", auth, async (req, res) => {
   const parentId = req.query.parentId || "-1";
   const xml = create({ version: "1.0", encoding: "utf-8" })
@@ -644,6 +674,113 @@ app.get("/api/ebay/categories", auth, async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// ── GET full food category tree for the Category Audit tool ──────────────────
+// Fetches Food & Beverages (14308) and all descendants up to 3 levels deep.
+// Also cross-references active listings to show which categories are in use.
+app.get("/api/ebay/food-categories", auth, async (req, res) => {
+  try {
+    // Fetch up to 3 levels under Food & Beverages (14308)
+    const xml = create({ version: "1.0", encoding: "utf-8" })
+      .ele("GetCategoriesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+        .ele("RequesterCredentials")
+          .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+        .up()
+        .ele("CategoryParent").txt("14308").up()
+        .ele("LevelLimit").txt("3").up()
+        .ele("ViewAllNodes").txt("true").up()
+      .up()
+      .end({ prettyPrint: false });
+
+    const ebayRes = await fetch(EBAY_API_URL, {
+      method: "POST",
+      headers: ebayHeaders("GetCategories"),
+      body: xml,
+    });
+    const rawText = await ebayRes.text();
+    const parsed = await parseXml(rawText);
+    const cats = [].concat(parsed?.GetCategoriesResponse?.CategoryArray?.Category || []);
+
+    // Also get what categories our active listings are actually using
+    const activeMap = activeListingsCache || await getActiveListingsMap(false).catch(() => ({}));
+    const activeCatIds = new Set();
+    // Pull category usage from cached active listings if available
+    // (we store itemId/price but not category in cache — mark as unknown)
+
+    // Cross-reference our EBAY_TO_STORE_CATEGORY map
+    const ourMappedIds = new Set(Object.keys(EBAY_TO_STORE_CATEGORY));
+
+    const result = cats
+      .map(c => ({
+        id:       String(c.CategoryID || ""),
+        name:     String(c.CategoryName || ""),
+        level:    parseInt(c.CategoryLevel || "0"),
+        parentId: String(c.CategoryParentID || ""),
+        isLeaf:   c.LeafCategory === "true" || c.LeafCategory === true,
+        inOurMap: ourMappedIds.has(String(c.CategoryID)),
+      }))
+      .filter(c => c.id && c.name)
+      .sort((a, b) => {
+        // Sort by level then name for tree-like display
+        if (a.level !== b.level) return a.level - b.level;
+        return a.name.localeCompare(b.name);
+      });
+
+    res.json({ categories: result, ourMappedIds: [...ourMappedIds] });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── POST update a single category mapping ─────────────────────────────────────
+// Updates EBAY_TO_STORE_CATEGORY in memory and saves to category_overrides.json
+const CATEGORY_OVERRIDES_PATH = path.join(__dirname, "category_overrides.json");
+
+function loadCategoryOverrides() {
+  try { return JSON.parse(fs.readFileSync(CATEGORY_OVERRIDES_PATH, "utf8")); }
+  catch(e) { return {}; }
+}
+
+// Merge overrides into EBAY_TO_STORE_CATEGORY on startup
+(function applyCategoryOverrides() {
+  const overrides = loadCategoryOverrides();
+  Object.assign(EBAY_TO_STORE_CATEGORY, overrides);
+  if (Object.keys(overrides).length) {
+    console.log(`Applied ${Object.keys(overrides).length} category override(s) from file`);
+  }
+})();
+
+app.post("/api/ebay/category-map", auth, (req, res) => {
+  const { id, name } = req.body;
+  if (!id || !name) return res.status(400).json({ error: "id and name required" });
+
+  // Update in-memory map
+  EBAY_TO_STORE_CATEGORY[String(id)] = name;
+
+  // Persist to overrides file
+  const overrides = loadCategoryOverrides();
+  overrides[String(id)] = name;
+  fs.writeFileSync(CATEGORY_OVERRIDES_PATH, JSON.stringify(overrides, null, 2));
+
+  // Bust store category cache so new IDs get created on next listing
+  storeCategoryCache = null;
+
+  console.log(`Category map updated: ${id} → "${name}"`);
+  res.json({ success: true, id, name });
+});
+
+// ── DELETE remove a category mapping ─────────────────────────────────────────
+app.delete("/api/ebay/category-map/:id", auth, (req, res) => {
+  const id = req.params.id;
+  delete EBAY_TO_STORE_CATEGORY[id];
+  const overrides = loadCategoryOverrides();
+  delete overrides[id];
+  fs.writeFileSync(CATEGORY_OVERRIDES_PATH, JSON.stringify(overrides, null, 2));
+  storeCategoryCache = null;
+  res.json({ success: true });
+});
+
+
 
 // ── eBay: webhook — order notification ───────────────────────────────────────
 // eBay sends a POST to this endpoint when an order is placed
@@ -1400,7 +1537,7 @@ app.post("/webhook/ebay-account-deletion", (req, res) => {
 app.post("/api/claude/autofill", auth, async (req, res) => {
   const { name, description, weight } = req.body;
 
-  const prompt = "You are an eBay listing expert for a grain mill and whole foods store. Given a product name and description, return ONLY a JSON object with these fields:\n- categoryId: the best eBay US category ID (number as string)\n- brand: brand name from the product (or Unbranded)\n- type: short product type for eBay item specifics\n- weight: weight in lbs as a number (use provided weight, or extract from name, or null)\n- categoryName: human readable category name\n- categoryRationale: one short sentence explaining why this category was chosen (e.g. \"Matches Grains & Rice — whole unground wheat kernel product\")\n\nProduct name: " + name + "\nDescription: " + (description || "None") + "\nKnown weight (lbs): " + (weight || "unknown") + "\n\nCategory IDs to use:\n257993: Grains & Rice - whole unground grain kernels (wheat berries, corn, barley, millet, quinoa, rye, buckwheat, spelt berries)\n257947: Flour - already ground into flour (all-purpose, bread, wheat, spelt, rye, almond, coconut flour)\n257958: Breakfast Cereals & Oats - oats, oatmeal, granola, grits, farina, hot cereals\n257952: Yeast Leavening & Binders - yeast, baking powder, baking soda, cream of tartar, xanthan gum\n257951: Sugar & Sweeteners - sugar, honey, maple syrup, molasses, stevia\n257944: Bread & Pastry Mixes\n257945: Cake & Cupcake Mixes\n257946: Cookie & Brownie Mixes\n257989: Cooking Oils - olive oil, coconut oil, vegetable oil\n257978: Salt - sea salt, kosher salt, himalayan, canning salt\n257977: Pepper & Chili - black pepper, cayenne, paprika, chili powder\n257980: Spices - cinnamon, cumin, turmeric, nutmeg\n257979: Seasoning Mixes & Blends\n257983: Honey\n257984: Jam Jelly & Preserves\n257985: Nut Butters - peanut butter, almond butter, tahini\n257991: Dried Beans & Pulses - beans, lentils, split peas, chickpeas\n257988: Longlife Cooking & Baking Fats - butter powder, shortening, ghee\n258012: Dried Fruit & Nuts - raisins, dried fruit, nuts, seeds, trail mix\n258013: Popcorn kernels\n257995: Prepared Food & Ready Meals - mixes, soup mixes\n257971: Freeze-dried or Dehydrated Fruits & Vegetables\n20626: Food Storage - mylar bags, vacuum seal bags, oxygen absorbers, mason jars, buckets, canning supplies, storage containers\n184638: Grain Mills & Food Mills - manual or electric grain mills, wheat grinders\n133696: Food Dehydrators\n79631: Other Food & Beverages - anything food that does not fit above\n\nReturn ONLY valid JSON, no markdown, no explanation.";
+  const prompt = "You are an eBay listing expert for a grain mill and whole foods store. Given a product name and description, return ONLY a JSON object with these fields:\n- categoryId: the best eBay US category ID (number as string)\n- brand: brand name from the product (or Unbranded)\n- type: short product type for eBay item specifics\n- weight: weight in lbs as a number (use provided weight, or extract from name, or null)\n- categoryName: human readable category name\n- categoryRationale: one short sentence explaining why this category was chosen (e.g. \"Matches Grains & Rice — whole unground wheat kernel product\")\n\nProduct name: " + name + "\nDescription: " + (description || "None") + "\nKnown weight (lbs): " + (weight || "unknown") + "\n\nCategory IDs to use:\n257993: Grains & Rice - whole unground grain kernels (wheat berries, corn, barley, millet, quinoa, rye, buckwheat, spelt berries)\n14923: Flour & Cornmeal - already ground into flour (all-purpose, bread, wheat, spelt, rye, almond, coconut flour)\n257958: Breakfast Cereals & Oats - oats, oatmeal, granola, grits, farina, hot cereals\n257952: Yeast Leavening & Binders - yeast, baking powder, baking soda, cream of tartar, xanthan gum\n257951: Sugar & Sweeteners - sugar, honey, maple syrup, molasses, stevia\n257944: Bread & Pastry Mixes\n257945: Cake & Cupcake Mixes\n257946: Cookie & Brownie Mixes\n257989: Cooking Oils - olive oil, coconut oil, vegetable oil\n257978: Salt - sea salt, kosher salt, himalayan, canning salt\n257977: Pepper & Chili - black pepper, cayenne, paprika, chili powder\n257980: Spices - cinnamon, cumin, turmeric, nutmeg\n257979: Seasoning Mixes & Blends\n257983: Honey\n257984: Jam Jelly & Preserves\n257985: Nut Butters - peanut butter, almond butter, tahini\n257991: Dried Beans & Pulses - beans, lentils, split peas, chickpeas\n257988: Longlife Cooking & Baking Fats - butter powder, shortening, ghee\n258012: Dried Fruit & Nuts - raisins, dried fruit, nuts, seeds, trail mix\n258013: Popcorn kernels\n257995: Prepared Food & Ready Meals - mixes, soup mixes\n257971: Freeze-dried or Dehydrated Fruits & Vegetables\n20626: Food Storage - mylar bags, vacuum seal bags, oxygen absorbers, mason jars, buckets, canning supplies, storage containers\n184638: Grain Mills & Food Mills - manual or electric grain mills, wheat grinders\n133696: Food Dehydrators\n79631: Other Food & Beverages - anything food that does not fit above\n\nReturn ONLY valid JSON, no markdown, no explanation.";
 
   try {
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
