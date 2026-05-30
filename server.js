@@ -322,7 +322,13 @@ function ebayHeaders(callName) {
 }
 
 async function parseXml(xmlStr) {
-  return xml2js.parseStringPromise(xmlStr, { explicitArray: false });
+  try {
+    return await xml2js.parseStringPromise(xmlStr, { explicitArray: false });
+  } catch(e) {
+    console.error("parseXml failed:", e.message);
+    console.error("Raw response (first 500 chars):", String(xmlStr).substring(0, 500));
+    throw new Error("XML parse error: " + e.message + " — raw: " + String(xmlStr).substring(0, 120));
+  }
 }
 
 // ── Auth middleware for dashboard ────────────────────────────────────────────
@@ -675,19 +681,16 @@ app.get("/api/ebay/categories", auth, async (req, res) => {
   }
 });
 
-// ── GET full food category tree for the Category Audit tool ──────────────────
-// Fetches Food & Beverages (14308) and all descendants up to 3 levels deep.
-// Also cross-references active listings to show which categories are in use.
-app.get("/api/ebay/food-categories", auth, async (req, res) => {
+// ── Quick browser test for food categories (no auth, read-only) ───────────────
+app.get("/api/test/categories", async (req, res) => {
   try {
-    // Fetch up to 3 levels under Food & Beverages (14308)
     const xml = create({ version: "1.0", encoding: "utf-8" })
       .ele("GetCategoriesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
         .ele("RequesterCredentials")
           .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
         .up()
         .ele("CategoryParent").txt("14308").up()
-        .ele("LevelLimit").txt("3").up()
+        .ele("LevelLimit").txt("2").up()
         .ele("ViewAllNodes").txt("true").up()
       .up()
       .end({ prettyPrint: false });
@@ -698,16 +701,51 @@ app.get("/api/ebay/food-categories", auth, async (req, res) => {
       body: xml,
     });
     const rawText = await ebayRes.text();
+    console.log("TEST categories HTTP status:", ebayRes.status);
+    console.log("TEST categories raw (first 500):", rawText.substring(0, 500));
+    // Return raw so we can see it in browser
+    res.setHeader("Content-Type", "text/plain");
+    res.send(`HTTP ${ebayRes.status}\n\n${rawText.substring(0, 2000)}`);
+  } catch(e) {
+    res.status(500).send("Error: " + e.message);
+  }
+});
+
+
+// Fetches Food & Beverages (14308) and all descendants up to 3 levels deep.
+// Also cross-references active listings to show which categories are in use.
+app.get("/api/ebay/food-categories", auth, async (req, res) => {
+  try {
+    // Fetch direct children of Food & Beverages (14308) — level 2 only
+    // Level 3 returns thousands of categories and a multi-MB response
+    const xml = create({ version: "1.0", encoding: "utf-8" })
+      .ele("GetCategoriesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+        .ele("RequesterCredentials")
+          .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+        .up()
+        .ele("CategoryParent").txt("14308").up()
+        .ele("LevelLimit").txt("2").up()
+        .ele("ViewAllNodes").txt("true").up()
+      .up()
+      .end({ prettyPrint: false });
+
+    const ebayRes = await fetch(EBAY_API_URL, {
+      method: "POST",
+      headers: ebayHeaders("GetCategories"),
+      body: xml,
+    });
+    const rawText = await ebayRes.text();
+    console.log("food-categories HTTP status:", ebayRes.status);
+    console.log("food-categories raw (first 400):", rawText.substring(0, 400));
+
+    if (ebayRes.status !== 200) {
+      return res.status(502).json({ error: `eBay returned HTTP ${ebayRes.status}`, raw: rawText.substring(0, 200) });
+    }
+
     const parsed = await parseXml(rawText);
     const cats = [].concat(parsed?.GetCategoriesResponse?.CategoryArray?.Category || []);
+    console.log(`food-categories: parsed ${cats.length} categories`);
 
-    // Also get what categories our active listings are actually using
-    const activeMap = activeListingsCache || await getActiveListingsMap(false).catch(() => ({}));
-    const activeCatIds = new Set();
-    // Pull category usage from cached active listings if available
-    // (we store itemId/price but not category in cache — mark as unknown)
-
-    // Cross-reference our EBAY_TO_STORE_CATEGORY map
     const ourMappedIds = new Set(Object.keys(EBAY_TO_STORE_CATEGORY));
 
     const result = cats
@@ -719,18 +757,16 @@ app.get("/api/ebay/food-categories", auth, async (req, res) => {
         isLeaf:   c.LeafCategory === "true" || c.LeafCategory === true,
         inOurMap: ourMappedIds.has(String(c.CategoryID)),
       }))
-      .filter(c => c.id && c.name)
-      .sort((a, b) => {
-        // Sort by level then name for tree-like display
-        if (a.level !== b.level) return a.level - b.level;
-        return a.name.localeCompare(b.name);
-      });
+      .filter(c => c.id && c.name && c.id !== "14308") // exclude the parent itself
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({ categories: result, ourMappedIds: [...ourMappedIds] });
   } catch(e) {
+    console.error("food-categories error:", e.message);
     res.status(500).json({ error: e.message });
   }
 });
+
 
 // ── POST update a single category mapping ─────────────────────────────────────
 // Updates EBAY_TO_STORE_CATEGORY in memory and saves to category_overrides.json
