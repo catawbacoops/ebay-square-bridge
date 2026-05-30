@@ -64,9 +64,7 @@ const EBAY_TO_STORE_CATEGORY = {
 
   // --- Baking & Desserts (257943) subcategories ---
   "257943": "Baking & Desserts",            // parent
-  "257947": "Baking Chocolate",             // leaf
-  "257948": "Baking Dessert Syrup",         // leaf
-  "257949": "Baking Mixes",                 // leaf - bread/cake/cookie mixes
+  "257949": "Baking Mixes",                 // leaf - bread mixes, cake mixes, pancake mixes, FLOUR
   "257950": "Baking Nuts & Seeds",          // leaf
   "257951": "Sugar & Sweeteners",           // leaf
   "257952": "Yeast & Leavening Agents",     // leaf
@@ -1824,6 +1822,17 @@ Return ONLY valid JSON, no markdown, no explanation.`;
 
   return { html: noJsHtml, about, ingredients };
 }
+
+// ── Category corrections: known wrong IDs → correct IDs ──────────────────────
+// Applied during bulk revise to fix miscategorized listings automatically.
+const CATEGORY_CORRECTIONS = {
+  "257947": "257949",  // Baking Chocolate / was misused for flour → Baking Mixes
+  "257954": "257949",  // Extracts & Flavoring → Baking Mixes
+  "14923":  "257949",  // Old flour category ID → Baking Mixes
+  "177762": "257993",  // Old default listing category → Grains & Cereals
+  "257991": "257993",  // Dried Beans & Pulses (wrong for grains) → Grains & Cereals
+};
+
 // For each active listing: regenerates branded description via Claude,
 // resolves/creates Store category, and pushes ReviseFixedPriceItem to eBay.
 // Uses SSE so the dashboard can stream live progress.
@@ -1898,7 +1907,12 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
         const getParsed = await parseXml(await getRes.text());
         const fullItem = getParsed?.GetItemResponse?.Item;
 
-        const categoryId = fullItem?.PrimaryCategory?.CategoryID || "";
+        const rawCategoryId = String(fullItem?.PrimaryCategory?.CategoryID || "");
+        // Auto-correct known wrong category IDs
+        const categoryId = CATEGORY_CORRECTIONS[rawCategoryId] || rawCategoryId;
+        if (CATEGORY_CORRECTIONS[rawCategoryId]) {
+          console.log(`[${itemId}] Category corrected: ${rawCategoryId} → ${categoryId} (${title})`);
+        }
         const imageUrl = [].concat(fullItem?.PictureDetails?.PictureURL || [])[0] || "";
 
         // Safely extract weight — WeightMajor/Minor may be objects from xml2js
@@ -1941,7 +1955,10 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
             .up()
             .ele("Item")
               .ele("ItemID").txt(String(itemId)).up()
-              .ele("Description").txt(html).up();
+              .ele("Description").txt(html).up()
+              .ele("PrimaryCategory")
+                .ele("CategoryID").txt(String(categoryId)).up()
+              .up();
 
         if (storeCatId) {
           reviseNode = reviseNode
