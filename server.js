@@ -691,33 +691,29 @@ app.get("/api/test/categories", async (req, res) => {
         .up()
         .ele("CategoryParent").txt("14308").up()
         .ele("LevelLimit").txt("2").up()
-        .ele("ViewAllNodes").txt("true").up()
+        .ele("DetailLevel").txt("ReturnAll").up()
       .up()
       .end({ prettyPrint: false });
 
+    console.log("TEST XML:", xml.substring(0, 300));
     const ebayRes = await fetch(EBAY_API_URL, {
       method: "POST",
       headers: ebayHeaders("GetCategories"),
       body: xml,
     });
     const rawText = await ebayRes.text();
-    console.log("TEST categories HTTP status:", ebayRes.status);
-    console.log("TEST categories raw (first 500):", rawText.substring(0, 500));
-    // Return raw so we can see it in browser
+    console.log("TEST HTTP status:", ebayRes.status);
+    console.log("TEST raw (first 500):", rawText.substring(0, 500));
     res.setHeader("Content-Type", "text/plain");
-    res.send(`HTTP ${ebayRes.status}\n\n${rawText.substring(0, 2000)}`);
+    res.send(`HTTP ${ebayRes.status}\n\n${rawText.substring(0, 3000)}`);
   } catch(e) {
     res.status(500).send("Error: " + e.message);
   }
 });
 
 
-// Fetches Food & Beverages (14308) and all descendants up to 3 levels deep.
-// Also cross-references active listings to show which categories are in use.
 app.get("/api/ebay/food-categories", auth, async (req, res) => {
   try {
-    // Fetch direct children of Food & Beverages (14308) — level 2 only
-    // Level 3 returns thousands of categories and a multi-MB response
     const xml = create({ version: "1.0", encoding: "utf-8" })
       .ele("GetCategoriesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
         .ele("RequesterCredentials")
@@ -725,9 +721,11 @@ app.get("/api/ebay/food-categories", auth, async (req, res) => {
         .up()
         .ele("CategoryParent").txt("14308").up()
         .ele("LevelLimit").txt("2").up()
-        .ele("ViewAllNodes").txt("true").up()
+        .ele("DetailLevel").txt("ReturnAll").up()
       .up()
       .end({ prettyPrint: false });
+
+    console.log("food-categories XML:", xml.substring(0, 300));
 
     const ebayRes = await fetch(EBAY_API_URL, {
       method: "POST",
@@ -739,7 +737,7 @@ app.get("/api/ebay/food-categories", auth, async (req, res) => {
     console.log("food-categories raw (first 400):", rawText.substring(0, 400));
 
     if (ebayRes.status !== 200) {
-      return res.status(502).json({ error: `eBay returned HTTP ${ebayRes.status}`, raw: rawText.substring(0, 200) });
+      return res.status(502).json({ error: `eBay returned HTTP ${ebayRes.status}`, raw: rawText.substring(0, 300) });
     }
 
     const parsed = await parseXml(rawText);
@@ -757,7 +755,7 @@ app.get("/api/ebay/food-categories", auth, async (req, res) => {
         isLeaf:   c.LeafCategory === "true" || c.LeafCategory === true,
         inOurMap: ourMappedIds.has(String(c.CategoryID)),
       }))
-      .filter(c => c.id && c.name && c.id !== "14308") // exclude the parent itself
+      .filter(c => c.id && c.name && c.id !== "14308")
       .sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({ categories: result, ourMappedIds: [...ourMappedIds] });
