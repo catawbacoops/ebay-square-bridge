@@ -203,7 +203,28 @@
     .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
     .dot-green-s { background: #1D9E75; }
 
-    input, textarea, select { background: #1e1e26 !important; color: #e8e8f0 !important; border-color: #35353f !important; }
+    .cat-row { display:flex; align-items:center; gap:10px; padding:8px 10px; border-bottom:1px solid #2a2a32; font-size:13px; }
+    .cat-row:last-child { border-bottom:none; }
+    .cat-row:hover { background:#22222a; }
+    .cat-id { font-family:monospace; font-size:12px; color:#9b804a; width:70px; flex-shrink:0; }
+    .cat-name-cell { flex:1; color:#e8e8f0; }
+    .cat-store-name { font-size:11px; color:#6e6e82; margin-top:2px; }
+    .cat-mapped { display:inline-block; font-size:10px; background:#1a2e25; color:#1D9E75; padding:1px 6px; border-radius:8px; margin-left:6px; border:1px solid #1D9E7544; }
+    .cat-level-1 { padding-left:10px; }
+    .cat-level-2 { padding-left:24px; font-size:12px; }
+    .cat-level-3 { padding-left:38px; font-size:12px; color:#a0a0b0; }
+    .cat-add-btn { font-size:11px; padding:3px 10px; background:#9b804a22; color:#c4a46a; border:1px solid #9b804a55; border-radius:5px; cursor:pointer; white-space:nowrap; }
+    .cat-add-btn:hover { background:#9b804a; color:#fff; }
+    .cat-add-btn.mapped { background:#1a2e25; color:#1D9E75; border-color:#1D9E7544; cursor:default; }
+    .cat-edit-btn { font-size:11px; padding:3px 8px; background:#2a2a32; color:#a0a0b0; border:1px solid #35353f; border-radius:5px; cursor:pointer; }
+    .cat-edit-btn:hover { background:#35353f; }
+    .cat-del-btn { font-size:11px; padding:3px 8px; color:#c42b30; background:transparent; border:1px solid #c42b3044; border-radius:5px; cursor:pointer; }
+    .cat-del-btn:hover { background:#2e1a1a; }
+    .map-edit-row { display:flex; gap:6px; align-items:center; padding:6px 10px; background:#1e1e28; border-bottom:1px solid #2a2a32; }
+    .map-edit-row input { flex:1; padding:5px 8px; font-size:12px; border:1.5px solid #35353f; border-radius:5px; }
+    .map-edit-row button { font-size:12px; padding:5px 10px; border-radius:5px; cursor:pointer; border:none; }
+
+ color: #e8e8f0 !important; border-color: #35353f !important; }
     input::placeholder, textarea::placeholder { color: #555566 !important; }
     input:focus, textarea:focus, select:focus { border-color: #E53238 !important; outline: none; }
     option { background: #1e1e26; color: #e8e8f0; }
@@ -263,6 +284,7 @@
     <button class="tab-btn" id="tab-btn-search" onclick="switchTab('search')">Search &amp; Add</button>
     <button class="tab-btn" id="tab-btn-active" onclick="switchTab('active')">Active Listings</button>
     <button class="tab-btn" id="tab-btn-ended" onclick="switchTab('ended')">Ended Listings</button>
+    <button class="tab-btn" id="tab-btn-categories" onclick="switchTab('categories')">⚙ Categories</button>
   </div>
 
   <main>
@@ -363,6 +385,39 @@
       </div>
     </div>
 
+    <!-- ── CATEGORIES TAB ── -->
+    <div class="tab-panel" id="tab-categories">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>eBay Category Map</h2>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <span id="cat-status" style="font-size:12px;color:#6e6e82;"></span>
+            <button class="sync-btn" onclick="loadCategories()" id="load-cats-btn">↻ Load from eBay</button>
+          </div>
+        </div>
+        <div class="panel-body">
+
+          <!-- Current map -->
+          <div style="margin-bottom:20px;">
+            <div style="font-size:12px;font-weight:600;color:#6e6e82;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">
+              Current Category Map <span style="font-weight:400;color:#555566;">(used by autofill + Store categories)</span>
+            </div>
+            <div id="current-map-table"></div>
+          </div>
+
+          <!-- eBay live tree -->
+          <div>
+            <div style="font-size:12px;font-weight:600;color:#6e6e82;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">
+              eBay Live Category Tree <span style="font-weight:400;color:#555566;">(Food &amp; Beverages and subcategories)</span>
+            </div>
+            <input type="text" id="cat-filter" placeholder="Filter categories…" oninput="filterCategories()"
+              style="width:100%;margin-bottom:10px;font-size:13px;padding:7px 10px;border:1.5px solid #35353f;border-radius:7px;" />
+            <div id="cat-tree"><div class="empty-state">Click "Load from eBay" to fetch live category data</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -438,7 +493,199 @@
   let currentQueueId = null;
   let queuePollTimer = null;
 
+  // ── Categories ────────────────────────────────────────────────────────────
+  let allCategories = [];
+  let ourCategoryMap = {}; // id -> storeName
+
+  async function loadCategories() {
+    const btn = document.getElementById('load-cats-btn');
+    const status = document.getElementById('cat-status');
+    btn.textContent = 'Loading…'; btn.disabled = true;
+    status.textContent = 'Fetching from eBay…';
+    document.getElementById('cat-tree').innerHTML = '<div class="empty-state"><div class="spinner" style="margin:0 auto 10px;"></div>Loading live category tree from eBay…</div>';
+
+    try {
+      const res = await fetch('/api/ebay/food-categories', { headers: { 'x-dashboard-password': PASSWORD } });
+      const data = await safeJson(res);
+      if (data.error) { status.textContent = 'Error: ' + data.error; return; }
+      allCategories = data.categories || [];
+      // Build our current map from server response
+      await loadCurrentMap();
+      status.textContent = `${allCategories.length} categories loaded`;
+      renderCategoryTree(allCategories);
+    } catch(e) {
+      status.textContent = 'Error: ' + e.message;
+    } finally {
+      btn.textContent = '↻ Load from eBay'; btn.disabled = false;
+    }
+  }
+
+  async function loadCurrentMap() {
+    // Fetch the current EBAY_TO_STORE_CATEGORY from a lightweight endpoint
+    // We'll infer it from the food-categories response ourMappedIds
+    // and render the current map from what we know client-side
+    renderCurrentMap();
+  }
+
+  // Seed from what we know the server has (kept in sync via add/delete actions)
+  const BUILTIN_MAP = {
+    "257993":"Grains & Rice","14923":"Flour & Cornmeal","257958":"Breakfast Cereals & Oats",
+    "257952":"Yeast, Leavening & Binders","257951":"Sugar & Sweeteners","257944":"Bread & Pastry Mixes",
+    "257945":"Cake & Cupcake Mixes","257946":"Cookie & Brownie Mixes","257989":"Cooking Oils",
+    "257978":"Salt","257977":"Pepper & Chili","257980":"Spices","257979":"Seasoning Mixes & Blends",
+    "257983":"Honey","257984":"Jam, Jelly & Preserves","257985":"Nut Butters",
+    "257991":"Dried Beans & Pulses","257988":"Longlife Cooking & Baking Fats",
+    "258012":"Dried Fruit & Nuts","258013":"Popcorn","257995":"Prepared Food & Ready Meals",
+    "257971":"Freeze-dried & Dehydrated Foods","20626":"Food Storage",
+    "184638":"Grain Mills & Food Mills","133696":"Food Dehydrators","79631":"Other Food & Beverages"
+  };
+  ourCategoryMap = { ...BUILTIN_MAP };
+
+  function renderCurrentMap() {
+    const el = document.getElementById('current-map-table');
+    const entries = Object.entries(ourCategoryMap).sort((a,b) => a[1].localeCompare(b[1]));
+    el.innerHTML = `<table class="listings-table" style="font-size:12px;">
+      <thead><tr><th style="width:80px;">eBay ID</th><th>Store Category Name</th><th style="width:100px;"></th></tr></thead>
+      <tbody>` +
+      entries.map(([id, name]) => `
+        <tr id="maprow-${id}">
+          <td class="cat-id">${esc(id)}</td>
+          <td id="mapname-${id}">${esc(name)}</td>
+          <td style="display:flex;gap:4px;">
+            <button class="cat-edit-btn" onclick="editMapEntry('${id}','${esc(name)}')">Edit</button>
+            <button class="cat-del-btn" onclick="deleteMapEntry('${id}')">✕</button>
+          </td>
+        </tr>`).join('') +
+      `</tbody></table>
+      <div style="margin-top:10px;">
+        <button class="btn-queue" onclick="showAddMapForm()" style="font-size:12px;">+ Add Mapping</button>
+        <div id="add-map-form" style="display:none;margin-top:8px;display:none;">
+          <div class="map-edit-row">
+            <input type="text" id="new-map-id" placeholder="eBay Category ID" style="width:120px;flex:none;" />
+            <input type="text" id="new-map-name" placeholder="Store category name" />
+            <button onclick="saveNewMapEntry()" style="background:#1D9E75;color:#fff;">Save</button>
+            <button onclick="document.getElementById('add-map-form').style.display='none'" style="background:#35353f;color:#a0a0b0;">Cancel</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function editMapEntry(id, currentName) {
+    const nameCell = document.getElementById('mapname-' + id);
+    if (!nameCell) return;
+    nameCell.innerHTML = `<div style="display:flex;gap:6px;align-items:center;">
+      <input type="text" id="edit-input-${id}" value="${esc(currentName)}" style="flex:1;padding:4px 7px;font-size:12px;border:1.5px solid #35353f;border-radius:5px;" />
+      <button onclick="saveMapEntry('${id}')" style="font-size:11px;padding:3px 8px;background:#1D9E75;color:#fff;border:none;border-radius:5px;cursor:pointer;">Save</button>
+      <button onclick="renderCurrentMap()" style="font-size:11px;padding:3px 8px;background:#35353f;color:#a0a0b0;border:none;border-radius:5px;cursor:pointer;">✕</button>
+    </div>`;
+    document.getElementById('edit-input-' + id)?.focus();
+  }
+
+  async function saveMapEntry(id) {
+    const val = document.getElementById('edit-input-' + id)?.value.trim();
+    if (!val) return;
+    const res = await fetch('/api/ebay/category-map', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+      body: JSON.stringify({ id, name: val })
+    });
+    const data = await safeJson(res);
+    if (data.error) { showToast('Error: ' + data.error, 'error'); return; }
+    ourCategoryMap[id] = val;
+    showToast(`✓ Updated: ${id} → "${val}"`, 'success');
+    renderCurrentMap();
+    renderCategoryTree(allCategories);
+  }
+
+  async function deleteMapEntry(id) {
+    if (!confirm(`Remove mapping for category ${id}?`)) return;
+    const res = await fetch('/api/ebay/category-map/' + id, { method: 'DELETE', headers: { 'x-dashboard-password': PASSWORD } });
+    const data = await safeJson(res);
+    if (data.error) { showToast('Error: ' + data.error, 'error'); return; }
+    delete ourCategoryMap[id];
+    showToast(`Removed mapping for ${id}`);
+    renderCurrentMap();
+    renderCategoryTree(allCategories);
+  }
+
+  function showAddMapForm() {
+    const f = document.getElementById('add-map-form');
+    f.style.display = f.style.display === 'none' ? 'flex' : 'none';
+  }
+
+  async function saveNewMapEntry() {
+    const id = document.getElementById('new-map-id')?.value.trim();
+    const name = document.getElementById('new-map-name')?.value.trim();
+    if (!id || !name) { showToast('ID and name required', 'error'); return; }
+    const res = await fetch('/api/ebay/category-map', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+      body: JSON.stringify({ id, name })
+    });
+    const data = await safeJson(res);
+    if (data.error) { showToast('Error: ' + data.error, 'error'); return; }
+    ourCategoryMap[id] = name;
+    showToast(`✓ Added: ${id} → "${name}"`, 'success');
+    document.getElementById('add-map-form').style.display = 'none';
+    renderCurrentMap();
+    renderCategoryTree(allCategories);
+  }
+
+  async function addToMapFromTree(id, name) {
+    const storeName = prompt(`Store category name for "${name}" (ID: ${id}):`, name);
+    if (!storeName) return;
+    const res = await fetch('/api/ebay/category-map', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+      body: JSON.stringify({ id, name: storeName })
+    });
+    const data = await safeJson(res);
+    if (data.error) { showToast('Error: ' + data.error, 'error'); return; }
+    ourCategoryMap[id] = storeName;
+    showToast(`✓ Added: ${id} → "${storeName}"`, 'success');
+    renderCurrentMap();
+    renderCategoryTree(allCategories);
+  }
+
+  function filterCategories() {
+    const q = document.getElementById('cat-filter').value.toLowerCase();
+    renderCategoryTree(q ? allCategories.filter(c =>
+      c.name.toLowerCase().includes(q) || c.id.includes(q)
+    ) : allCategories);
+  }
+
+  function renderCategoryTree(cats) {
+    const el = document.getElementById('cat-tree');
+    if (!cats.length) { el.innerHTML = '<div class="empty-state">No categories found</div>'; return; }
+
+    const rows = cats.map(c => {
+      const isMapped = !!ourCategoryMap[c.id];
+      const levelClass = c.level <= 1 ? 'cat-level-1' : c.level === 2 ? 'cat-level-2' : 'cat-level-3';
+      const indent = c.level <= 1 ? '' : c.level === 2 ? '└ ' : '  └ ';
+      const mappedBadge = isMapped ? `<span class="cat-mapped">✓ mapped → "${esc(ourCategoryMap[c.id])}"</span>` : '';
+      const leafBadge = c.isLeaf ? '<span style="font-size:10px;color:#555566;margin-left:4px;">leaf</span>' : '';
+      const addBtn = isMapped
+        ? `<button class="cat-add-btn mapped" disabled>✓ In Map</button>`
+        : `<button class="cat-add-btn" onclick="addToMapFromTree('${c.id}','${esc(c.name)}')">+ Add to Map</button>`;
+
+      return `<div class="cat-row ${levelClass}">
+        <span class="cat-id">${esc(c.id)}</span>
+        <span class="cat-name-cell">${indent}${esc(c.name)}${mappedBadge}${leafBadge}</span>
+        ${addBtn}
+      </div>`;
+    }).join('');
+
+    el.innerHTML = `<div style="border:1px solid #35353f;border-radius:8px;overflow:hidden;">${rows}</div>`;
+  }
+
   // ── Tabs ──────────────────────────────────────────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    document.getElementById('tab-btn-' + name).classList.add('active');
+    if (name === 'active') loadEbayListings();
+    if (name === 'ended') loadEndedListings();
+    if (name === 'queue') renderQueueView();
+    if (name === 'categories') renderCurrentMap();
+  }
   function switchTab(name) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
