@@ -653,7 +653,7 @@ app.get("/api/ebay/categories", auth, async (req, res) => {
       .ele("LevelLimit").txt("2").up()
       .ele("ViewAllNodes").txt("true").up()
     .up()
-    .end();
+    .end({ prettyPrint: false });
 
   try {
     const ebayRes = await fetch(EBAY_API_URL, {
@@ -831,7 +831,7 @@ async function syncLatestEbayOrders() {
         .ele("OrderRole").txt("Seller").up()
         .ele("OrderStatus").txt("Completed").up()
       .up()
-      .end();
+      .end({ prettyPrint: false });
 
     const ebayRes = await fetch(EBAY_API_URL, {
       method: "POST",
