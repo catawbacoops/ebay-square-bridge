@@ -637,7 +637,7 @@ app.post("/api/ebay/list", auth, async (req, res) => {
       .up()
     .up();
 
-  const xml = (await buildPolicyXml(itemNode, { weightPounds, weightOunces, pkgDepth, pkgWidth, pkgHeight }))
+  const xml = (await buildPolicyXml(itemNode, { weightPounds, weightOunces, pkgDepth: 0, pkgWidth: 0, pkgHeight: 0 }))
       .up()
     .up()
     .end({ prettyPrint: false });
@@ -2115,6 +2115,90 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
     }
 
     const total = allItems.length;
+    send({ type: "status", message: `Found ${total} active listings. Building category map…`, total });
+
+    // Pre-build SKU → Square department name map from the full catalog
+    // This avoids 3 Square API calls per item during the loop
+    const skuToCategoryName = {};
+    try {
+      // Fetch all Square items with their categories in one pass
+      let cursor = null;
+      const squareCatHierarchy = {};
+      do {
+        const sqRes = await fetch(`${SQUARE_BASE}/v2/catalog/list?types=ITEM${cursor ? `&cursor=${cursor}` : ''}`, {
+          headers: squareHeaders()
+        });
+        const sqData = await sqRes.json();
+        const objects = sqData.objects || [];
+        objects.forEach(obj => {
+          const catId = obj.item_data?.category_id
+            || (obj.item_data?.categories || [])[0]?.id
+            || null;
+          if (catId) {
+            (obj.item_data?.variations || []).forEach(v => {
+              const sku = v.item_variation_data?.sku;
+              if (sku) squareCatHierarchy[sku] = catId;
+            });
+          }
+        });
+        cursor = sqData.cursor || null;
+      } while (cursor);
+
+      // Fetch all category objects to resolve hierarchy
+      const allCatIds = [...new Set(Object.values(squareCatHierarchy))];
+      const catMap = {};
+      for (let i = 0; i < allCatIds.length; i += 100) {
+        const batch = allCatIds.slice(i, i + 100);
+        const catRes = await fetch(`${SQUARE_BASE}/v2/catalog/batch-retrieve`, {
+          method: "POST", headers: squareHeaders(),
+          body: JSON.stringify({ object_ids: batch })
+        });
+        const catData = await catRes.json();
+        (catData.objects || []).forEach(c => {
+          catMap[c.id] = { name: c.category_data?.name || "", parentId: c.category_data?.parent_category?.id || null };
+        });
+      }
+      // Fetch parent categories (up to 5 rounds)
+      let toFetch = [...new Set(Object.values(catMap).map(c => c.parentId).filter(Boolean).filter(id => !catMap[id]))];
+      for (let round = 0; round < 5 && toFetch.length; round++) {
+        const pRes = await fetch(`${SQUARE_BASE}/v2/catalog/batch-retrieve`, {
+          method: "POST", headers: squareHeaders(),
+          body: JSON.stringify({ object_ids: toFetch })
+        });
+        const pData = await pRes.json();
+        const nextFetch = [];
+        (pData.objects || []).forEach(c => {
+          const gpId = c.category_data?.parent_category?.id || null;
+          catMap[c.id] = { name: c.category_data?.name || "", parentId: gpId };
+          if (gpId && !catMap[gpId] && !nextFetch.includes(gpId)) nextFetch.push(gpId);
+        });
+        toFetch = nextFetch;
+      }
+
+      // Resolve each SKU to its department name
+      const isAlphaGroup = (name) => /^[A-Z][a-z]{0,2}(-[A-Z][a-z]{0,2})?$/.test(name.trim());
+      const resolve = (catId) => {
+        const chain = [];
+        let cur = catId;
+        const seen = new Set();
+        while (cur && catMap[cur] && !seen.has(cur)) {
+          seen.add(cur);
+          chain.push(catMap[cur].name);
+          cur = catMap[cur].parentId;
+        }
+        const filtered = chain.filter(n => n && !isAlphaGroup(n)).reverse();
+        return filtered[0] || chain[0] || "";
+      };
+
+      Object.entries(squareCatHierarchy).forEach(([sku, catId]) => {
+        skuToCategoryName[sku] = resolve(catId);
+      });
+
+      console.log(`Category map built: ${Object.keys(skuToCategoryName).length} SKUs mapped`);
+    } catch(e) {
+      console.error("Failed to build SKU category map:", e.message);
+    }
+
     send({ type: "status", message: `Found ${total} active listings. Starting revise…`, total });
 
     let succeeded = 0;
@@ -2181,34 +2265,9 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
           imageUrl,
         });
 
-        // 4. Resolve Store category from SKU's Square category name
-        // For bulk revise we look up Square category via the catalog API
-        let squareCategoryName = null;
-        if (sku) {
-          try {
-            const sqRes = await fetch(`${SQUARE_BASE}/v2/catalog/search`, {
-              method: "POST",
-              headers: squareHeaders(),
-              body: JSON.stringify({ object_types: ["ITEM_VARIATION"], query: { exact_query: { attribute_name: "sku", attribute_value: sku } } })
-            });
-            const sqData = await sqRes.json();
-            const variation = (sqData.objects || [])[0];
-            if (variation) {
-              const parentId = variation.item_variation_data?.item_id;
-              if (parentId) {
-                const parentRes = await fetch(`${SQUARE_BASE}/v2/catalog/object/${parentId}`, { headers: squareHeaders() });
-                const parentData = await parentRes.json();
-                const catId = parentData.object?.item_data?.category_id;
-                if (catId) {
-                  const catRes = await fetch(`${SQUARE_BASE}/v2/catalog/object/${catId}`, { headers: squareHeaders() });
-                  const catData = await catRes.json();
-                  squareCategoryName = catData.object?.category_data?.name || null;
-                }
-              }
-            }
-          } catch(e) { /* skip - Store category is optional */ }
-        }
-        const storeCatId = squareCategoryName ? await getStoreCategoryId(squareCategoryName).catch(() => null) : null;
+        // 4. Resolve Store category from pre-built SKU map
+        const squareCategoryName = skuToCategoryName[sku] || null;
+        const storeCatId = squareCategoryName ? await getOrCreateStoreCategory(squareCategoryName).catch(() => null) : null;
 
         // 5. Build ReviseFixedPriceItem XML
         let reviseNode = create({ version: "1.0", encoding: "utf-8" })
@@ -2218,7 +2277,10 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
             .up()
             .ele("Item")
               .ele("ItemID").txt(String(itemId)).up()
-              .ele("Description").txt(html).up();
+              .ele("Description").txt(html).up()
+              .ele("PrimaryCategory")
+                .ele("CategoryID").txt("14308").up()
+              .up();
 
         if (storeCatId) {
           reviseNode = reviseNode
