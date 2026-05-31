@@ -278,13 +278,12 @@
   </header>
 
   <div class="tab-bar">
-    <button class="tab-btn active" id="tab-btn-queue" onclick="switchTab('queue')">
+    <button class="tab-btn active" id="tab-btn-search" onclick="switchTab('search')">Search &amp; Add</button>
+    <button class="tab-btn" id="tab-btn-queue" onclick="switchTab('queue')">
       ✦ Approval Queue <span class="tab-badge green" id="queue-badge" style="display:none;">0</span>
     </button>
-    <button class="tab-btn" id="tab-btn-search" onclick="switchTab('search')">Search &amp; Add</button>
     <button class="tab-btn" id="tab-btn-active" onclick="switchTab('active')">Active Listings</button>
     <button class="tab-btn" id="tab-btn-ended" onclick="switchTab('ended')">Ended Listings</button>
-    <button class="tab-btn" id="tab-btn-categories" onclick="switchTab('categories')">⚙ Categories</button>
   </div>
 
   <main>
@@ -309,12 +308,12 @@
     </div>
 
     <!-- ── QUEUE TAB ── -->
-    <div class="tab-panel active" id="tab-queue">
+    <div class="tab-panel" id="tab-queue">
       <div id="queue-view"></div>
     </div>
 
-    <!-- ── SEARCH TAB ── -->
-    <div class="tab-panel" id="tab-search">
+    <!-- ── SEARCH TAB (default) ── -->
+    <div class="tab-panel active" id="tab-search">
       <div class="panel">
         <div class="panel-header">
           <h2>Search Square Catalog</h2>
@@ -345,6 +344,7 @@
           <div style="display:flex;align-items:center;gap:10px;">
             <span id="listing-count" style="font-size:13px;color:#6e6e82;"></span>
             <button class="sync-btn" onclick="loadEbayListings()" id="refresh-listings-btn">↻ Refresh</button>
+            <button class="sync-btn" onclick="endAllListings()" id="end-all-btn" style="border-color:#c42b30;color:#c42b30;">✕ End All</button>
           </div>
         </div>
         <div class="panel-body">
@@ -845,7 +845,6 @@
     if (name === 'active') loadEbayListings();
     if (name === 'ended') loadEndedListings();
     if (name === 'queue') renderQueueView();
-    if (name === 'categories') { renderCategoryMap(); if (!squareCategories.length) loadCategories(); }
   }
   function switchTab(name) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -872,7 +871,6 @@
           document.getElementById('app').style.display = 'block';
           loadQueue();
           loadEbayListings();
-          loadEndedListings();
         }
       }).catch(() => { document.getElementById('login-err').textContent = 'Could not connect to server.'; });
   }
@@ -1604,7 +1602,29 @@
   }
 
   // ── Sync buttons ──────────────────────────────────────────────────────────
-  async function syncOrders() {
+  async function endAllListings() {
+    if (!confirm(`End all ${allEbayListings.length} active eBay listings? This cannot be undone.`)) return;
+    const btn = document.getElementById('end-all-btn');
+    btn.classList.add('loading'); btn.textContent = 'Ending…';
+    let done = 0, failed = 0;
+    for (const listing of allEbayListings) {
+      try {
+        const res = await fetch('/api/ebay/end-listing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+          body: JSON.stringify({ itemId: listing.itemId })
+        });
+        const data = await safeJson(res);
+        if (data.error) failed++; else done++;
+      } catch(e) { failed++; }
+    }
+    showToast(`Ended ${done} listings${failed ? `, ${failed} failed` : ''}`, failed ? 'error' : 'success');
+    btn.textContent = '✕ End All'; btn.classList.remove('loading');
+    loadEbayListings();
+    loadEndedListings();
+  }
+
+
     const btn = document.getElementById('sync-btn');
     btn.classList.add('loading'); btn.textContent = 'Syncing…';
     try {
