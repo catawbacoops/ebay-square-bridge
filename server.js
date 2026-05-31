@@ -319,9 +319,12 @@ app.get("/api/square/products", auth, async (req, res) => {
     }
 
     // Collect category IDs to batch-fetch names
+    // Square API v2 uses either category_id (old) or categories[0].id (new)
     const categoryIds = [];
     (searchData.objects || []).forEach((obj) => {
-      const catId = obj.item_data?.category_id;
+      const catId = obj.item_data?.category_id
+        || (obj.item_data?.categories || [])[0]?.id
+        || null;
       if (catId && !categoryIds.includes(catId)) categoryIds.push(catId);
     });
 
@@ -338,7 +341,10 @@ app.get("/api/square/products", auth, async (req, res) => {
         (catData.objects || []).forEach((cat) => {
           if (cat.category_data?.name) categoryNameMap[cat.id] = cat.category_data.name;
         });
-      } catch(e) { /* categories optional */ }
+        console.log(`Square categories fetched: ${JSON.stringify(categoryNameMap)}`);
+      } catch(e) { console.error("Category fetch error:", e.message); }
+    } else {
+      console.log("No category IDs found in search results");
     }
 
     const items = (searchData.objects || []).map((obj) => {
@@ -349,7 +355,9 @@ app.get("/api/square/products", auth, async (req, res) => {
       const priceDollars = priceAmount / 100;
       const ebayPrice = parseFloat((priceDollars * (1 + MARKUP)).toFixed(2));
       const imageId = itemImageMap[obj.id];
-      const categoryId = itemData.category_id || "";
+      const categoryId = itemData.category_id
+        || (itemData.categories || [])[0]?.id
+        || "";
       const categoryName = categoryNameMap[categoryId] || "";
 
       return {
