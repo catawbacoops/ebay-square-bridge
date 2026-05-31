@@ -559,6 +559,16 @@ app.post("/api/ebay/list", auth, async (req, res) => {
 });
 
 // ── eBay: get categories (for dropdown) ─────────────────────────────────────
+// ── GET fetch actual Store categories from eBay ───────────────────────────────
+app.get("/api/ebay/store-categories", auth, async (req, res) => {
+  try {
+    if (storeCategoryCache === null) await loadStoreCategoryCache();
+    res.json(storeCategoryCache || {});
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── GET Square catalog categories ─────────────────────────────────────────────
 app.get("/api/square/categories", auth, async (req, res) => {
   try {
