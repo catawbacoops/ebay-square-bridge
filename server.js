@@ -154,6 +154,22 @@ async function buildPolicyXml(itemNode, { weightPounds, weightOunces, pkgDepth, 
 }
 
 
+// Fallback: Square resolved name → eBay Store category name (for mismatches)
+const SQUARE_TO_STORE_FALLBACK = {
+  "Beverage":              "Beverages & Drink Mixes",
+  "Canned Meat":           "Canned Meats",
+  "Pickled":               "Pickles",
+  "Salad":                 "Salad Fixings",
+  "Sauce":                 "Sauces",
+  "Canning":               "Baking",
+  "Citric Acid":           "Baking",
+  "Ketchup":               "Condiment",
+  "Domestic Pet Care":     "Wild Animal Care",
+  "Home Pantry":           "Store Supplies",
+  "Personal Care":         "Store Supplies",
+  "The Grain Mill Cooperative": null,  // ignore
+};
+
 // Static Store category name → ID map (from eBay Seller Hub - May 2026)
 const STORE_CATEGORY_IDS = {
   "Baking":                 "44875673011",
@@ -191,9 +207,14 @@ async function loadStoreCategoryCache() {
 // Look up eBay Store category ID from Square category name
 async function getStoreCategoryId(squareCategoryName) {
   if (!squareCategoryName) return null;
-  const id = STORE_CATEGORY_IDS[squareCategoryName];
-  if (!id) console.warn(`No Store category ID for Square category: "${squareCategoryName}"`);
-  return id || null;
+  // Direct match first
+  if (STORE_CATEGORY_IDS[squareCategoryName]) return STORE_CATEGORY_IDS[squareCategoryName];
+  // Try fallback map for mismatches
+  const fallbackName = SQUARE_TO_STORE_FALLBACK[squareCategoryName];
+  if (fallbackName === null) return null; // explicitly ignored
+  if (fallbackName && STORE_CATEGORY_IDS[fallbackName]) return STORE_CATEGORY_IDS[fallbackName];
+  console.warn(`No Store category ID for Square category: "${squareCategoryName}"`);
+  return null;
 }
 
 async function getOrCreateStoreCategory(squareCategoryName) {
@@ -403,7 +424,7 @@ app.get("/api/square/products", auth, async (req, res) => {
         // Resolve: walk full chain leaf→root, strip A-Z alphabet groupings,
         // then return the FIRST item in the filtered chain (closest to root = department level).
         // e.g. Oatmeal→Hot Cereal→Breakfast→A-C becomes [Breakfast, Hot Cereal, Oatmeal] → "Breakfast"
-        const isAlphaGroup = (name) => /^[A-Z][a-z]?(-[A-Z][a-z]?)?$/.test(name.trim());
+        const isAlphaGroup = (name) => /^[A-Z][a-z]{0,2}(-[A-Z][a-z]{0,2})?$/.test(name.trim());
         const resolve = (leafId) => {
           const chain = [];
           let cur = leafId;
@@ -656,7 +677,7 @@ app.get("/api/debug/categories", auth, async (req, res) => {
     const catMap = {};
     cats.forEach(c => { catMap[c.id] = { name: c.name, parentId: c.parentId }; });
 
-    const isAlphaGroup = (name) => /^[A-Z][a-z]?(-[A-Z][a-z]?)?$/.test(name.trim());
+    const isAlphaGroup = (name) => /^[A-Z][a-z]{0,2}(-[A-Z][a-z]{0,2})?$/.test(name.trim());
     const resolve = (leafId) => {
       const chain = [];
       let cur = leafId;
