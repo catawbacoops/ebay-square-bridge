@@ -1642,7 +1642,7 @@
     btn.classList.add('loading'); btn.textContent = '✦ Revising…';
     panel.style.display = 'block'; log.innerHTML = ''; bar.style.width = '0%'; summary.textContent = '';
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    const es = new EventSource('/api/ebay/bulk-revise);
+    const es = new EventSource('/api/ebay/bulk-revise');
     es.onmessage = (e) => {
       const d = JSON.parse(e.data);
       if (d.type === 'status') { log.innerHTML += `<div style="color:#6e6e82;">${esc(d.message)}</div>`; if (d.total) summary.textContent = '0 / ' + d.total; }
