@@ -8,16 +8,7 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1a1a1f; color: #e8e8f0; min-height: 100vh; }
 
-    /* ── Login ── */
-    #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .login-box { background: #24242c; border-radius: 12px; padding: 36px 32px; width: 340px; box-shadow: 0 2px 16px rgba(0,0,0,0.3); }
-    .login-box h1 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
-    .login-box p { font-size: 13px; color: #6e6e82; margin-bottom: 24px; }
-    .login-box input { width: 100%; padding: 10px 12px; border: 1.5px solid #35353f; border-radius: 8px; font-size: 14px; margin-bottom: 12px; outline: none; background: #1e1e26; color: #e8e8f0; }
-    .login-box input:focus { border-color: #E53238; }
-    .login-box button { width: 100%; padding: 11px; background: #E53238; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 500; cursor: pointer; }
-    .login-box button:hover { background: #c42b30; }
-    .login-err { font-size: 13px; color: #c42b30; margin-top: 8px; }
+
 
     /* ── App shell ── */
     #app { display: none; }
@@ -248,19 +239,10 @@
 </head>
 <body>
 
-<!-- Login -->
-<div id="login-screen">
-  <div class="login-box">
-    <h1>Grain Mill Co-op</h1>
-    <p>eBay Automation Dashboard</p>
-    <input type="password" id="pwd-input" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()" />
-    <button onclick="doLogin()">Sign In</button>
-    <p class="login-err" id="login-err"></p>
-  </div>
-</div>
+
 
 <!-- App -->
-<div id="app">
+<div id="app" style="display:block;">
   <header>
     <div class="logo">
       <span class="logo-badge">eBay</span>
@@ -494,9 +476,9 @@
 
     try {
       const [sqRes, storeRes, mapRes] = await Promise.all([
-        fetch('/api/square/categories', { headers: { 'x-dashboard-password': PASSWORD } }).then(r => safeJson(r)),
-        fetch('/api/ebay/store-categories', { headers: { 'x-dashboard-password': PASSWORD } }).then(r => safeJson(r)),
-        fetch('/api/store-map', { headers: { 'x-dashboard-password': PASSWORD } }).then(r => safeJson(r)),
+        fetch('/api/square/categories', { headers: { } }).then(r => safeJson(r)),
+        fetch('/api/ebay/store-categories', { headers: { } }).then(r => safeJson(r)),
+        fetch('/api/store-map', { headers: { } }).then(r => safeJson(r)),
       ]);
 
       squareCategories = Array.isArray(sqRes) ? sqRes : [];
@@ -562,13 +544,13 @@
     if (!storeName) {
       // Delete the mapping
       await fetch('/api/store-map/' + encodeURIComponent(squareName), {
-        method: 'DELETE', headers: { 'x-dashboard-password': PASSWORD }
+        method: 'DELETE', headers: { }
       });
       delete storeMap[squareName];
     } else {
       await fetch('/api/store-map', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ squareName, storeName })
       });
       storeMap[squareName] = storeName;
@@ -587,7 +569,7 @@
     document.getElementById('cat-tree').innerHTML = '<div class="empty-state"><div class="spinner" style="margin:0 auto 10px;"></div>Fetching your Store categories…</div>';
 
     try {
-      const res = await fetch('/api/ebay/store-categories', { headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/ebay/store-categories', { headers: { } });
       const data = await safeJson(res);
       if (data.error) { status.textContent = 'Error: ' + data.error; return; }
 
@@ -746,7 +728,7 @@
     const val = document.getElementById('edit-input-' + id)?.value.trim();
     if (!val) return;
     const res = await fetch('/api/ebay/category-map', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, name: val })
     });
     const data = await safeJson(res);
@@ -759,7 +741,7 @@
 
   async function deleteMapEntry(id) {
     if (!confirm(`Remove mapping for category ${id}?`)) return;
-    const res = await fetch('/api/ebay/category-map/' + id, { method: 'DELETE', headers: { 'x-dashboard-password': PASSWORD } });
+    const res = await fetch('/api/ebay/category-map/' + id, { method: 'DELETE', headers: { } });
     const data = await safeJson(res);
     if (data.error) { showToast('Error: ' + data.error, 'error'); return; }
     delete ourCategoryMap[id];
@@ -778,7 +760,7 @@
     const name = document.getElementById('new-map-name')?.value.trim();
     if (!id || !name) { showToast('ID and name required', 'error'); return; }
     const res = await fetch('/api/ebay/category-map', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, name })
     });
     const data = await safeJson(res);
@@ -794,7 +776,7 @@
     const storeName = prompt(`Store category name for "${name}" (ID: ${id}):`, name);
     if (!storeName) return;
     const res = await fetch('/api/ebay/category-map', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, name: storeName })
     });
     const data = await safeJson(res);
@@ -857,24 +839,12 @@
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
-  function doLogin() {
-    const pwd = document.getElementById('pwd-input').value.trim();
-    if (!pwd) return;
-    PASSWORD = pwd;
-    fetch('/api/queue/stats', { headers: { 'x-dashboard-password': pwd } })
-      .then(r => {
-        if (r.status === 401) {
-          document.getElementById('login-err').textContent = 'Incorrect password.';
-          PASSWORD = '';
-        } else {
-          document.getElementById('login-screen').style.display = 'none';
-          document.getElementById('app').style.display = 'block';
-          switchTab('search');
-          loadQueue();
-          loadEbayListings();
-        }
-      }).catch(() => { document.getElementById('login-err').textContent = 'Could not connect to server.'; });
-  }
+  // Auto-initialize on page load
+  (function init() {
+    switchTab('search');
+    loadQueue();
+    loadEbayListings();
+  })();
 
   // ── Queue ─────────────────────────────────────────────────────────────────
   // Safe fetch-JSON: never throws on empty/non-JSON response
@@ -887,7 +857,7 @@
 
   async function loadQueue() {
     try {
-      const res = await fetch('/api/queue', { headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/queue', { headers: { } });
       queueItems = await safeJson(res);
       if (!Array.isArray(queueItems)) { console.error('Queue load error:', queueItems); queueItems = []; }
       updateQueueBadge();
@@ -924,7 +894,7 @@
     try {
       const res = await fetch('/api/queue/add', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ product })
       });
       const data = await res.json();
@@ -1181,7 +1151,7 @@
     try {
       const res = await fetch('/api/queue/approve', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id,
           selectedTitle,
@@ -1211,7 +1181,7 @@
   }
 
   async function skipQueueItem(id) {
-    await fetch('/api/queue/skip', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ id }) });
+    await fetch('/api/queue/skip', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
     await loadQueue();
     const nextReady = queueItems.find(i => i.status === 'ready' && i.id !== id);
     if (nextReady) currentQueueId = nextReady.id;
@@ -1219,13 +1189,13 @@
   }
 
   async function removeFromQueue(id) {
-    await fetch('/api/queue/' + id, { method: 'DELETE', headers: { 'x-dashboard-password': PASSWORD } });
+    await fetch('/api/queue/' + id, { method: 'DELETE', headers: { } });
     if (currentQueueId === id) currentQueueId = null;
     await loadQueue();
   }
 
   async function retryQueueItem(id) {
-    await fetch('/api/queue/retry', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ id }) });
+    await fetch('/api/queue/retry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
     showToast('Retrying AI processing…');
     await loadQueue();
     queuePollTimer = setTimeout(loadQueue, 3000);
@@ -1233,7 +1203,7 @@
 
   async function restoreQueueItem(id) {
     // Move skipped item back to processing to re-run AI
-    await fetch('/api/queue/retry', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ id }) });
+    await fetch('/api/queue/retry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
     showToast('Re-processing…');
     await loadQueue();
     queuePollTimer = setTimeout(loadQueue, 3000);
@@ -1279,7 +1249,7 @@
     document.getElementById('search-results').innerHTML = '<div class="empty-state">Searching…</div>';
     try {
       const markup = parseFloat(document.getElementById('markup-input').value) || 10;
-      const res = await fetch('/api/square/products?q=' + encodeURIComponent(q), { headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/square/products?q=' + encodeURIComponent(q), { headers: { } });
       const items = await res.json();
       if (items.error) { document.getElementById('search-results').innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + esc(items.error) + '</div>'; return; }
       if (!items.length) { document.getElementById('search-results').innerHTML = '<div class="empty-state">No products found</div>'; return; }
@@ -1290,7 +1260,7 @@
       renderProducts(adjusted, {});
       const skus = adjusted.map(p => p.sku).filter(Boolean);
       if (skus.length) {
-        fetch('/api/ebay/check-listed', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ skus }) })
+        fetch('/api/ebay/check-listed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skus }) })
           .then(r => r.json()).then(skuMap => { window._lastSkuMap = skuMap; renderProducts(lastSearchItems, skuMap); }).catch(() => {});
       }
     } catch(e) {
@@ -1346,7 +1316,7 @@
   function refreshSkuStatus() {
     const skus = lastSearchItems.map(p => p.sku).filter(Boolean);
     if (!skus.length) return;
-    fetch('/api/ebay/check-listed', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ skus }) })
+    fetch('/api/ebay/check-listed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skus }) })
       .then(r => r.json()).then(skuMap => renderProducts(lastSearchItems, skuMap)).catch(() => {});
   }
 
@@ -1354,7 +1324,7 @@
     const btn = event.target;
     btn.disabled = true; btn.textContent = 'Syncing…';
     try {
-      const res = await fetch('/api/ebay/sync-price', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ itemId, newPrice }) });
+      const res = await fetch('/api/ebay/sync-price', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId, newPrice }) });
       const data = await res.json();
       if (data.error) { showToast('Error: ' + data.error, 'error'); btn.disabled = false; btn.textContent = '↻ Sync'; return; }
       showToast('Price updated to $' + parseFloat(newPrice).toFixed(2));
@@ -1365,7 +1335,7 @@
   async function removeListing(itemId, sku) {
     if (!confirm('Remove this listing from eBay?')) return;
     try {
-      const res = await fetch('/api/ebay/end-listing', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ itemId }) });
+      const res = await fetch('/api/ebay/end-listing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId }) });
       const data = await res.json();
       if (data.error) { showToast('Error: ' + data.error, 'error'); return; }
       showToast('Listing removed from eBay');
@@ -1402,8 +1372,8 @@
 
     // Run autofill and description generation in parallel
     Promise.all([
-      fetch('/api/claude/autofill', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ name: product.name, description: product.description||'', weight: product.weight||null }) }).then(r => r.json()).catch(() => null),
-      fetch('/api/claude/generate-description', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ name: product.name, description: product.description||'', sku: product.sku||'', weight: product.weight||null, imageUrl: product.imageUrl||'' }) }).then(r => r.json()).catch(() => null)
+      fetch('/api/claude/autofill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: product.name, description: product.description||'', weight: product.weight||null }) }).then(r => r.json()).catch(() => null),
+      fetch('/api/claude/generate-description', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: product.name, description: product.description||'', sku: product.sku||'', weight: product.weight||null, imageUrl: product.imageUrl||'' }) }).then(r => r.json()).catch(() => null)
     ]).then(([af, desc]) => {
       if (af && !af.error) {
         if (af.categoryId) document.getElementById('m-cat').value = af.categoryId;
@@ -1448,7 +1418,7 @@
 
     btn.disabled = true; btn.textContent = 'Listing…';
     try {
-      const res = await fetch('/api/ebay/list', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ name: title, description: desc, sku, ebayPrice: price, quantity: qty, categoryId: cat, conditionId: cond, brand, itemType, imageUrl: currentProduct?.imageUrl||'', weightLbs, squareCategory: currentProduct?.category||'' }) });
+      const res = await fetch('/api/ebay/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: title, description: desc, sku, ebayPrice: price, quantity: qty, categoryId: cat, conditionId: cond, brand, itemType, imageUrl: currentProduct?.imageUrl||'', weightLbs, squareCategory: currentProduct?.category||'' }) });
       const data = await safeJson(res);
       if (data.error) { errEl.textContent = data.error; btn.disabled = false; btn.textContent = 'List on eBay'; return; }
       closeModal(); showToast('Listed! Item ID: ' + data.itemId, 'success');
@@ -1466,7 +1436,7 @@
     el.innerHTML = '<div class="empty-state">Loading…</div>';
     btn.textContent = 'Loading…'; btn.disabled = true;
     try {
-      const res = await fetch('/api/ebay/listings?page=' + page, { headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/ebay/listings?page=' + page, { headers: { } });
       const data = await res.json();
       if (data.error) { el.innerHTML = '<div class="empty-state" style="color:#c42b30;">' + esc(data.error) + '</div>'; return; }
       allEbayListings = data.listings || [];
@@ -1537,7 +1507,7 @@
     const btn = document.getElementById('refresh-ended-btn');
     el.innerHTML = '<div class="empty-state">Loading…</div>'; btn.textContent = 'Loading…'; btn.disabled = true;
     try {
-      const res = await fetch('/api/ebay/ended-listings', { headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/ebay/ended-listings', { headers: { } });
       const data = await res.json();
       allEndedListings = data || [];
       const tabBtn = document.getElementById('tab-btn-ended');
@@ -1594,7 +1564,7 @@
     if (!confirm('Relist "' + sku + '" on eBay now?')) return;
     btn.disabled = true; btn.textContent = 'Relisting…';
     try {
-      const res = await fetch('/api/ebay/relist', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ sku, itemId }) });
+      const res = await fetch('/api/ebay/relist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku, itemId }) });
       const data = await safeJson(res);
       if (data.error) { showToast('Relist failed: ' + data.error, 'error'); btn.disabled = false; btn.textContent = '↺ Relist'; return; }
       showToast('✓ Relisted! Item ID: ' + data.itemId, 'success');
@@ -1612,7 +1582,7 @@
       try {
         const res = await fetch('/api/ebay/end-listing', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ itemId: listing.itemId })
         });
         const data = await safeJson(res);
@@ -1629,7 +1599,7 @@
     const btn = document.getElementById('sync-btn');
     btn.classList.add('loading'); btn.textContent = 'Syncing…';
     try {
-      const res = await fetch('/api/sync-orders', { method: 'POST', headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/sync-orders', { method: 'POST', headers: { } });
       const data = await res.json();
       if (data.error) showToast(data.error, 'error');
       else { document.getElementById('stat-orders').textContent = parseInt(document.getElementById('stat-orders').textContent||0)+1; showToast('Orders synced', 'success'); }
@@ -1641,7 +1611,7 @@
     const btn = document.getElementById('sellability-btn');
     btn.classList.add('loading'); btn.textContent = 'Checking…';
     try {
-      const res = await fetch('/api/sync-sellability', { method: 'POST', headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/sync-sellability', { method: 'POST', headers: { } });
       const data = await res.json();
       if (data.error) showToast('Error: ' + data.error, 'error');
       else showToast('Sellability check complete');
@@ -1653,7 +1623,7 @@
     const btn = document.getElementById('relist-check-btn');
     btn.classList.add('loading'); btn.textContent = 'Checking…';
     try {
-      const res = await fetch('/api/sync-relist', { method: 'POST', headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/sync-relist', { method: 'POST', headers: { } });
       const data = await res.json();
       if (data.error) showToast('Error: ' + data.error, 'error');
       else { showToast('Relist check complete'); loadEndedListings(); loadEbayListings(); }
@@ -1672,7 +1642,7 @@
     btn.classList.add('loading'); btn.textContent = '✦ Revising…';
     panel.style.display = 'block'; log.innerHTML = ''; bar.style.width = '0%'; summary.textContent = '';
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    const es = new EventSource('/api/ebay/bulk-revise?pwd=' + encodeURIComponent(PASSWORD));
+    const es = new EventSource('/api/ebay/bulk-revise);
     es.onmessage = (e) => {
       const d = JSON.parse(e.data);
       if (d.type === 'status') { log.innerHTML += `<div style="color:#6e6e82;">${esc(d.message)}</div>`; if (d.total) summary.textContent = '0 / ' + d.total; }
