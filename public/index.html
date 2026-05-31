@@ -453,7 +453,7 @@
     <div class="form-two">
       <div class="form-row">
         <label>eBay Category ID</label>
-        <input type="text" id="m-cat" value="177762" />
+        <input type="text" id="m-cat" value="14308" />
         <div style="font-size:11px;color:#9b804a;margin-top:3px;" id="category-rationale"></div>
       </div>
       <div class="form-row"><label>Condition</label>
@@ -501,23 +501,78 @@
     const btn = document.getElementById('load-cats-btn');
     const status = document.getElementById('cat-status');
     btn.textContent = 'Loading…'; btn.disabled = true;
-    status.textContent = 'Fetching from eBay…';
-    document.getElementById('cat-tree').innerHTML = '<div class="empty-state"><div class="spinner" style="margin:0 auto 10px;"></div>Loading live category tree from eBay…</div>';
+    status.textContent = 'Fetching Store categories from eBay…';
+    document.getElementById('cat-tree').innerHTML = '<div class="empty-state"><div class="spinner" style="margin:0 auto 10px;"></div>Fetching your Store categories…</div>';
 
     try {
-      const res = await fetch('/api/ebay/food-categories', { headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/ebay/store-categories', { headers: { 'x-dashboard-password': PASSWORD } });
       const data = await safeJson(res);
       if (data.error) { status.textContent = 'Error: ' + data.error; return; }
-      allCategories = data.categories || [];
-      // Build our current map from server response
-      await loadCurrentMap();
-      status.textContent = `${allCategories.length} categories loaded`;
-      renderCategoryTree(allCategories);
+
+      // data is { "Category Name": "storeId", ... }
+      const storeCategories = Object.entries(data).sort((a,b) => a[0].localeCompare(b[0]));
+      status.textContent = `${storeCategories.length} Store categories loaded from eBay`;
+
+      renderCurrentMap();
+      renderStoreCategoryMatcher(storeCategories);
     } catch(e) {
       status.textContent = 'Error: ' + e.message;
     } finally {
       btn.textContent = '↻ Load from eBay'; btn.disabled = false;
     }
+  }
+
+  function renderStoreCategoryMatcher(storeCategories) {
+    const el = document.getElementById('cat-tree');
+
+    // Build a reverse map: storeName -> [eBay category IDs that map to it]
+    const reverseMap = {};
+    Object.entries(ourCategoryMap).forEach(([ebayId, storeName]) => {
+      if (!reverseMap[storeName]) reverseMap[storeName] = [];
+      reverseMap[storeName].push(ebayId);
+    });
+
+    const rows = storeCategories.map(([name, storeId]) => {
+      const mappedIds = reverseMap[name] || [];
+      const mappedBadge = mappedIds.length
+        ? `<span style="font-size:11px;color:#1D9E75;">✓ mapped from ${mappedIds.join(', ')}</span>`
+        : `<span style="font-size:11px;color:#f59e0b;">⚠ not mapped to any eBay category</span>`;
+
+      return `<div class="cat-row">
+        <span class="cat-id">${esc(storeId)}</span>
+        <span class="cat-name-cell" style="font-weight:500;">${esc(name)}</span>
+        <span style="flex:1;">${mappedBadge}</span>
+      </div>`;
+    }).join('');
+
+    // Show unmapped eBay categories too
+    const allStoreNames = new Set(storeCategories.map(([n]) => n));
+    const unmappedEbay = Object.entries(ourCategoryMap)
+      .filter(([, storeName]) => !allStoreNames.has(storeName));
+
+    const unmappedRows = unmappedEbay.length ? `
+      <div style="margin-top:16px;padding:12px;background:#2e1a0a;border-radius:8px;border:1px solid #f59e0b44;">
+        <div style="font-size:12px;font-weight:600;color:#f59e0b;margin-bottom:8px;">
+          ⚠ ${unmappedEbay.length} eBay categories mapped to Store names that don't exist yet
+        </div>
+        ${unmappedEbay.map(([id, name]) => `
+          <div style="font-size:12px;color:#c8a060;padding:3px 0;">
+            eBay ID <strong>${esc(id)}</strong> → "<strong>${esc(name)}</strong>" — no matching Store category
+          </div>`).join('')}
+        <div style="font-size:11px;color:#8a6030;margin-top:8px;">
+          Either create these categories in your eBay Store, or update the mapping above to use an existing Store category name.
+        </div>
+      </div>` : '';
+
+    el.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:#6e6e82;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">
+        Your eBay Store Categories
+      </div>
+      <div style="border:1px solid #35353f;border-radius:8px;overflow:hidden;margin-bottom:12px;">${rows}</div>
+      ${unmappedRows}
+      <div style="font-size:12px;color:#6e6e82;margin-top:10px;">
+        To change which eBay marketplace category maps to which Store category, edit the entries in the <strong>Current Category Map</strong> above — the "Store Category Name" must exactly match one of the names listed here.
+      </div>`;
   }
 
   async function loadCurrentMap() {
@@ -1239,7 +1294,7 @@
     document.getElementById('m-price').value = product.ebayPrice > 0 ? product.ebayPrice.toFixed(2) : '';
     document.getElementById('m-qty').value = '5';
     document.getElementById('m-sku').value = product.sku || '';
-    document.getElementById('m-cat').value = '177762';
+    document.getElementById('m-cat').value = '14308';
     document.getElementById('m-brand').value = '';
     document.getElementById('m-type').value = '';
     document.getElementById('m-weight').value = product.weight > 0 ? product.weight : '';
