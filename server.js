@@ -339,6 +339,10 @@ async function parseXml(xmlStr) {
 
 // ── Auth middleware for dashboard ────────────────────────────────────────────
 function auth(req, res, next) {
+  const pwd = req.headers["x-dashboard-password"] || req.query.pwd;
+  if (pwd !== DASHBOARD_PASSWORD) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
   next();
 }
 
