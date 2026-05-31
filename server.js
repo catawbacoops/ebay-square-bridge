@@ -1899,12 +1899,14 @@ Return ONLY valid JSON, no markdown, no explanation.`;
   </div>`
     : "";
 
-  const html = `<div style="background:#fff;border-radius:8px;border:0.5px solid #d4c4a0;overflow:hidden;max-width:640px;margin:0 auto;font-family:Georgia,serif;">
-  <div style="background:#9b804a;padding:16px 24px;display:flex;align-items:center;gap:16px;">
-    <img src="${LOGO_URL}" alt="The Grain Mill Co-op" style="height:60px;width:auto;display:block;" />
-    <div style="border-left:0.5px solid #c4a46a;padding-left:16px;">
-      <div style="color:#f2ede3;font-size:13px;font-family:sans-serif;">Bulk Grains &#38; Baking Supplies</div>
-      <div style="color:#d4c4a0;font-size:12px;margin-top:4px;font-family:sans-serif;">Ships UPS Ground from Dutch Amish Country, PA</div>
+  const html = `<div style="background:#fff;border-radius:8px;border:0.5px solid #d4c4a0;overflow:hidden;width:100%;font-family:Georgia,serif;">
+  <div style="position:relative;overflow:hidden;min-height:90px;">
+    <img src="https://images.editor.website/uploads/b/ee7bbb4445cd029653d297c0f017675bcd272f2f5d280a31073c8a04e963b02e/bg-header_1775436376.png" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" />
+    <div style="position:relative;padding:16px 24px;display:flex;align-items:center;gap:16px;">
+      <img src="${LOGO_URL}" alt="The Grain Mill Co-op" style="height:60px;width:auto;display:block;" />
+      <div style="border-left:0.5px solid rgba(255,255,255,0.4);padding-left:16px;">
+        <div style="color:#fff;font-size:13px;font-family:sans-serif;text-shadow:0 1px 3px rgba(0,0,0,0.4);">Bulk Grains &#38; Baking Supplies</div>
+      </div>
     </div>
   </div>
   <div style="padding:24px;">
@@ -2581,71 +2583,31 @@ async function processQueueItem(id) {
   if (!item) return;
 
   try {
-    const { name, description, sku, weight, imageUrl, category, ebayPrice } = item.product;
+    const { name, description, weight } = item.product;
 
-    // Run autofill + title optimization in parallel
-    const [autofillData, titleData, descData] = await Promise.all([
-      // Autofill: category, brand, type, rationale
-      fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 300,
-          messages: [{ role: "user", content:
-            "You are an eBay listing expert for a grain mill and whole foods store. Return ONLY a JSON object:\n" +
-            "- categoryId: best eBay US category ID (string)\n- brand: brand or Unbranded\n- type: short product type\n" +
-            "- weight: weight in lbs as number or null\n- categoryName: human readable name\n" +
-            "- categoryRationale: one short sentence explaining category choice\n\n" +
-            "Product: " + name + "\nDescription: " + (description||"None") + "\nWeight: " + (weight||"unknown") + "\n\n" +
-            "Category: ALWAYS use 14308 (Food & Beverages) for all food products. Only exceptions: 20626 for Food Storage equipment, 184638 for Grain Mills, 133696 for Food Dehydrators.\n" +
-            "257952: Yeast, Leavening & Binders\n257951: Sugar & Sweeteners\n257944: Bread & Pastry Mixes\n" +
-            "257945: Cake & Cupcake Mixes\n257946: Cookie & Brownie Mixes\n257989: Cooking Oils\n" +
-            "257978: Salt\n257977: Pepper & Chili\n257980: Spices\n257979: Seasoning Mixes & Blends\n" +
-            "257983: Honey\n257984: Jam, Jelly & Preserves\n257985: Nut Butters\n" +
-            "257991: Dried Beans & Pulses\n257988: Longlife Cooking & Baking Fats\n" +
-            "258012: Dried Fruit & Nuts\n258013: Popcorn\n257995: Prepared Food & Ready Meals\n" +
-            "257971: Freeze-dried & Dehydrated Foods\n20626: Food Storage\n" +
-            "184638: Grain Mills & Food Mills\n133696: Food Dehydrators\n79631: Other Food & Beverages\n\n" +
-            "Return ONLY valid JSON, no markdown."
-          }]
-        })
-      }).then(r => r.json()).then(d => JSON.parse((d.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim())),
-
-      // Title optimization
-      fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 400,
-          messages: [{ role: "user", content:
-            "You are an eBay SEO expert for bulk food and grains. Write 2 eBay titles maximizing search visibility.\n" +
-            "Rules: lead with most-searched keyword, include weight when relevant, include attributes (Non-GMO, Organic, Bulk, Whole), avoid filler words, 70-80 chars each.\n" +
-            "Product: " + name + "\nDescription: " + (description||"None") + "\nWeight: " + (weight?weight+" lbs":"unknown") + "\n\n" +
-            'Return ONLY JSON: {"titles":[{"title":"...","chars":0,"rationale":"..."},{"title":"...","chars":0,"rationale":"..."}]}'
-          }]
-        })
-      }).then(r => r.json()).then(d => {
-        const parsed = JSON.parse((d.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim());
-        parsed.titles = (parsed.titles||[]).map(t => ({ ...t, chars: t.title.length }));
-        return parsed;
-      }),
-
-      // Description generation
-      generateBrandedDescription({ name, description, sku, weight, imageUrl })
-    ]);
+    // Only run title optimization — description uses standard template at listing time
+    const titleRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514", max_tokens: 400,
+        messages: [{ role: "user", content:
+          "You are an eBay SEO expert for bulk food and grains. Write 2 eBay titles maximizing search visibility.\n" +
+          "Rules: lead with most-searched keyword, include weight when relevant, include attributes (Non-GMO, Organic, Bulk, Whole), avoid filler words, 70-80 chars each.\n" +
+          "Product: " + name + "\nDescription: " + (description||"None") + "\nWeight: " + (weight?weight+" lbs":"unknown") + "\n\n" +
+          'Return ONLY JSON: {"titles":[{"title":"...","chars":0,"rationale":"..."},{"title":"...","chars":0,"rationale":"..."}]}'
+        }]
+      })
+    });
+    const titleJson = await titleRes.json();
+    const parsed = JSON.parse((titleJson.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim());
+    const titles = (parsed.titles||[]).map(t => ({ ...t, chars: t.title.length }));
 
     queueUpdate(id, {
       status: "ready",
       ai: {
-        titles: titleData.titles || [],
-        selectedTitle: (titleData.titles||[])[0]?.title || name.substring(0,80),
-        categoryId: autofillData.categoryId || "79631",
-        categoryName: autofillData.categoryName || "",
-        categoryRationale: autofillData.categoryRationale || "",
-        brand: autofillData.brand || "Unbranded",
-        type: autofillData.type || "",
-        weight: autofillData.weight || weight || null,
-        descriptionHtml: descData.html || "",
+        titles,
+        selectedTitle: titles[0]?.title || name.substring(0, 80),
       }
     });
 
@@ -2728,12 +2690,21 @@ app.post("/api/queue/approve", auth, async (req, res) => {
     const noConditionCategories = ["14308","181000","3025"];
     const skipCondition = noConditionCategories.includes(String(finalCat));
 
+    // Generate description from template at listing time
+    const { html: descHtml } = await generateBrandedDescription({
+      name: finalTitle,
+      description: product.description || "",
+      sku: product.sku || "",
+      weight: finalWeight,
+      imageUrl: product.imageUrl || "",
+    });
+
     let itemNode = create({ version:"1.0", encoding:"utf-8" })
       .ele("AddFixedPriceItemRequest", { xmlns:"urn:ebay:apis:eBLBaseComponents" })
         .ele("RequesterCredentials").ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up().up()
         .ele("Item")
           .ele("Title").txt(finalTitle.substring(0,80)).up()
-          .ele("Description").txt(ai.descriptionHtml || product.name).up()
+          .ele("Description").txt(descHtml).up()
           .ele("PrimaryCategory").ele("CategoryID").txt(String(finalCat)).up().up()
           .ele("StartPrice").txt(String(finalPrice)).up();
 
