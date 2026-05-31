@@ -350,20 +350,27 @@ app.get("/api/square/products", auth, async (req, res) => {
           }
         });
 
-        // Fetch parent categories
-        if (parentIds.length) {
+        // Fetch parent categories (up to 5 rounds to handle deep hierarchies)
+        let idsToFetch = parentIds.slice();
+        for (let round = 0; round < 5; round++) {
+          if (!idsToFetch.length) break;
           const pRes = await fetch(`${SQUARE_BASE}/v2/catalog/batch-retrieve`, {
             method: "POST", headers: squareHeaders(),
-            body: JSON.stringify({ object_ids: parentIds }),
+            body: JSON.stringify({ object_ids: idsToFetch }),
           });
           const pData = await pRes.json();
+          const nextRound = [];
           (pData.objects || []).forEach((cat) => {
             const gpId = cat.category_data?.parent_category?.id || null;
             catHierarchy[cat.id] = { name: cat.category_data?.name || "", parentId: gpId };
+            if (gpId && !catHierarchy[gpId] && !nextRound.includes(gpId)) nextRound.push(gpId);
           });
+          idsToFetch = nextRound;
         }
 
-        // Resolve: walk chain leaf→root, skip A-Z groupings, pick highest meaningful
+        // Resolve: walk full chain leaf→root, strip A-Z alphabet groupings,
+        // then return the FIRST item in the filtered chain (closest to root = department level).
+        // e.g. Oatmeal→Hot Cereal→Breakfast→A-C becomes [Breakfast, Hot Cereal, Oatmeal] → "Breakfast"
         const isAlphaGroup = (name) => /^[A-Z](-[A-Z])?$/.test(name.trim());
         const resolve = (leafId) => {
           const chain = [];
@@ -374,8 +381,10 @@ app.get("/api/square/products", auth, async (req, res) => {
             chain.push(catHierarchy[cur].name);
             cur = catHierarchy[cur].parentId;
           }
-          const meaningful = chain.filter(n => n && !isAlphaGroup(n));
-          return meaningful.length ? meaningful[meaningful.length - 1] : (chain[0] || "");
+          // chain is leaf→root order, filter alpha groups, reverse to root→leaf
+          const filtered = chain.filter(n => n && !isAlphaGroup(n)).reverse();
+          // filtered[0] = highest non-alpha ancestor = department (e.g. "Breakfast")
+          return filtered[0] || chain[0] || "";
         };
 
         categoryIds.forEach(id => { categoryNameMap[id] = resolve(id); });
