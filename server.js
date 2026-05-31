@@ -371,7 +371,7 @@ app.get("/api/square/products", auth, async (req, res) => {
         // Resolve: walk full chain leaf→root, strip A-Z alphabet groupings,
         // then return the FIRST item in the filtered chain (closest to root = department level).
         // e.g. Oatmeal→Hot Cereal→Breakfast→A-C becomes [Breakfast, Hot Cereal, Oatmeal] → "Breakfast"
-        const isAlphaGroup = (name) => /^[A-Z](-[A-Z])?$/.test(name.trim());
+        const isAlphaGroup = (name) => /^[A-Z][a-z]?(-[A-Z][a-z]?)?$/.test(name.trim());
         const resolve = (leafId) => {
           const chain = [];
           let cur = leafId;
