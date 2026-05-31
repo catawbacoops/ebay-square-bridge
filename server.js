@@ -164,22 +164,38 @@ async function loadStoreCategoryCache() {
     .up()
     .end({ prettyPrint: false });
 
-  const res = await fetch(EBAY_API_URL, {
-    method: "POST",
-    headers: ebayHeaders("GetStore"),
-    body: xml,
-  });
-  const parsed = await parseXml(await res.text());
-  const cats = [].concat(
-    parsed?.GetStoreResponse?.Store?.CustomCategories?.CustomCategory || []
-  );
-  storeCategoryCache = {};
-  cats.forEach(c => {
-    if (c.Name && c.CategoryID) {
-      storeCategoryCache[c.Name] = String(c.CategoryID);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const res = await fetch(EBAY_API_URL, {
+      method: "POST",
+      headers: ebayHeaders("GetStore"),
+      body: xml,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    const rawText = await res.text();
+    console.log("GetStore raw (first 300):", rawText.substring(0, 300));
+    const parsed = await parseXml(rawText);
+    const cats = [].concat(
+      parsed?.GetStoreResponse?.Store?.CustomCategories?.CustomCategory || []
+    );
+    storeCategoryCache = {};
+    cats.forEach(c => {
+      if (c.Name && c.CategoryID) {
+        storeCategoryCache[c.Name] = String(c.CategoryID);
+      }
+    });
+    console.log(`Loaded ${Object.keys(storeCategoryCache).length} Store categories from eBay`);
+  } catch(e) {
+    clearTimeout(timeout);
+    if (e.name === "AbortError") {
+      console.error("GetStore timed out after 10s");
+      throw new Error("GetStore request timed out");
     }
-  });
-  console.log(`Loaded ${Object.keys(storeCategoryCache).length} Store categories from eBay`);
+    throw e;
+  }
 }
 
 // Look up Store category ID for a product given its Square category name
@@ -565,7 +581,9 @@ app.get("/api/ebay/store-categories", auth, async (req, res) => {
     if (storeCategoryCache === null) await loadStoreCategoryCache();
     res.json(storeCategoryCache || {});
   } catch(e) {
-    res.status(500).json({ error: e.message });
+    console.error("store-categories error:", e.message);
+    // Return empty object so UI doesn't hang — user can retry
+    res.json({});
   }
 });
 
