@@ -182,11 +182,11 @@ async function loadStoreCategoryCache() {
   console.log(`Loaded ${Object.keys(storeCategoryCache).length} Store categories from eBay`);
 }
 
-async function getOrCreateStoreCategory(ebayCategoryId) {
-  const categoryName = EBAY_TO_STORE_CATEGORY[String(ebayCategoryId)];
-  if (!categoryName) return null;
+// Look up Store category ID for a product given its Square category name
+async function getStoreCategoryId(squareCategoryName) {
+  if (!squareCategoryName) return null;
 
-  // Load cache on first use
+  // Load Store category cache if needed
   if (storeCategoryCache === null) {
     try { await loadStoreCategoryCache(); } catch(e) {
       console.error("Failed to load Store category cache:", e.message);
@@ -194,13 +194,25 @@ async function getOrCreateStoreCategory(ebayCategoryId) {
     }
   }
 
-  // Look up by name — categories are manually created in eBay Store
-  const storeId = storeCategoryCache[categoryName];
+  // Load the Square → Store name map
+  const storeMap = loadStoreMap();
+  const storeName = storeMap[squareCategoryName] || squareCategoryName;
+  const storeId = storeCategoryCache[storeName];
+
   if (!storeId) {
-    console.warn(`Store category not found: "${categoryName}" (eBay cat ${ebayCategoryId}) — create it in eBay Seller Hub → Store → Manage Store`);
+    console.warn(`Store category not found for "${squareCategoryName}" → "${storeName}" — add it in eBay Seller Hub`);
   }
   return storeId || null;
 }
+
+// Legacy: look up by eBay marketplace category ID (used by bulk revise)
+async function getOrCreateStoreCategory(ebayCategoryId) {
+  // Since we now use 14308 for everything, look up by SKU's Square category
+  // For bulk revise we don't have Square category context, so just return null
+  // and let the per-product store map handle it during new listings
+  return null;
+}
+
 
 
 app.use(express.json());
@@ -441,8 +453,8 @@ app.post("/api/ebay/list", auth, async (req, res) => {
   const noConditionCategories = ["14308", "181000", "3025"];
   const skipCondition = noConditionCategories.includes(String(categoryId));
 
-  // Resolve Store category ID (create if needed)
-  const storeCatId = await getOrCreateStoreCategory(categoryId);
+  // Resolve Store category from Square product category name
+  const storeCatId = await getStoreCategoryId(req.body.squareCategory || "").catch(() => null);
 
   let itemNode = create({ version: "1.0", encoding: "utf-8" })
     .ele("AddFixedPriceItemRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
@@ -547,15 +559,57 @@ app.post("/api/ebay/list", auth, async (req, res) => {
 });
 
 // ── eBay: get categories (for dropdown) ─────────────────────────────────────
-// ── GET fetch actual Store categories from eBay for mapping ──────────────────
-app.get("/api/ebay/store-categories", auth, async (req, res) => {
+// ── GET Square catalog categories ─────────────────────────────────────────────
+app.get("/api/square/categories", auth, async (req, res) => {
   try {
-    await loadStoreCategoryCache();
-    res.json(storeCategoryCache);
+    const response = await fetch(`${SQUARE_BASE}/v2/catalog/list?types=CATEGORY`, {
+      headers: squareHeaders(),
+    });
+    const data = await response.json();
+    const cats = (data.objects || [])
+      .map(c => ({ id: c.id, name: c.category_data?.name || "" }))
+      .filter(c => c.name)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    res.json(cats);
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
+
+// ── Store category map: Square category name → eBay Store category name ───────
+// Stored in store_category_map.json, editable via the Categories tab.
+const STORE_MAP_PATH = path.join(__dirname, "store_category_map.json");
+
+function loadStoreMap() {
+  try { return JSON.parse(fs.readFileSync(STORE_MAP_PATH, "utf8")); }
+  catch(e) { return {}; }
+}
+
+function saveStoreMap(map) {
+  fs.writeFileSync(STORE_MAP_PATH, JSON.stringify(map, null, 2));
+}
+
+app.get("/api/store-map", auth, (req, res) => res.json(loadStoreMap()));
+
+app.post("/api/store-map", auth, (req, res) => {
+  const { squareName, storeName } = req.body;
+  if (!squareName || !storeName) return res.status(400).json({ error: "squareName and storeName required" });
+  const map = loadStoreMap();
+  map[squareName] = storeName;
+  saveStoreMap(map);
+  // Bust store category cache
+  storeCategoryCache = null;
+  res.json({ success: true });
+});
+
+app.delete("/api/store-map/:name", auth, (req, res) => {
+  const map = loadStoreMap();
+  delete map[decodeURIComponent(req.params.name)];
+  saveStoreMap(map);
+  res.json({ success: true });
+});
+
+
 
 
 app.get("/api/ebay/category-name", auth, async (req, res) => {
@@ -2376,8 +2430,8 @@ app.post("/api/queue/approve", auth, async (req, res) => {
   const finalQty = parseInt(quantity || 5);
 
   try {
-    // Resolve store category
-    const storeCatId = await getOrCreateStoreCategory(finalCat).catch(() => null);
+    // Resolve Store category from Square product category name
+    const storeCatId = await getStoreCategoryId(product.category || "").catch(() => null);
 
     const totalOz = Math.round(finalWeight * 16);
     const weightPounds = Math.floor(totalOz / 16);
