@@ -155,78 +155,17 @@ async function buildPolicyXml(itemNode, { weightPounds, weightOunces, pkgDepth, 
 
 
 async function loadStoreCategoryCache() {
-  const xml = create({ version: "1.0", encoding: "utf-8" })
-    .ele("GetStoreRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
-      .ele("RequesterCredentials")
-        .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
-      .up()
-      .ele("LevelLimit").txt("1").up()
-    .up()
-    .end({ prettyPrint: false });
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-
-  try {
-    const res = await fetch(EBAY_API_URL, {
-      method: "POST",
-      headers: ebayHeaders("GetStore"),
-      body: xml,
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    const rawText = await res.text();
-    console.log("GetStore raw (first 300):", rawText.substring(0, 300));
-    const parsed = await parseXml(rawText);
-    const cats = [].concat(
-      parsed?.GetStoreResponse?.Store?.CustomCategories?.CustomCategory || []
-    );
-    storeCategoryCache = {};
-    cats.forEach(c => {
-      if (c.Name && c.CategoryID) {
-        storeCategoryCache[c.Name] = String(c.CategoryID);
-      }
-    });
-    console.log(`Loaded ${Object.keys(storeCategoryCache).length} Store categories from eBay`);
-  } catch(e) {
-    clearTimeout(timeout);
-    if (e.name === "AbortError") {
-      console.error("GetStore timed out after 10s");
-      throw new Error("GetStore request timed out");
-    }
-    throw e;
-  }
+  // No-op: Store categories use Square category names directly
+  storeCategoryCache = {};
 }
 
-// Look up Store category ID for a product given its Square category name
+// Use Square category name directly as the eBay Store category name
 async function getStoreCategoryId(squareCategoryName) {
-  if (!squareCategoryName) return null;
-
-  // Load Store category cache if needed
-  if (storeCategoryCache === null) {
-    try { await loadStoreCategoryCache(); } catch(e) {
-      console.error("Failed to load Store category cache:", e.message);
-      return null;
-    }
-  }
-
-  // Load the Square → Store name map
-  const storeMap = loadStoreMap();
-  const storeName = storeMap[squareCategoryName] || squareCategoryName;
-  const storeId = storeCategoryCache[storeName];
-
-  if (!storeId) {
-    console.warn(`Store category not found for "${squareCategoryName}" → "${storeName}" — add it in eBay Seller Hub`);
-  }
-  return storeId || null;
+  return squareCategoryName || null;
 }
 
-// Legacy: look up by eBay marketplace category ID (used by bulk revise)
-async function getOrCreateStoreCategory(ebayCategoryId) {
-  // Since we now use 14308 for everything, look up by SKU's Square category
-  // For bulk revise we don't have Square category context, so just return null
-  // and let the per-product store map handle it during new listings
-  return null;
+async function getOrCreateStoreCategory(squareCategoryName) {
+  return squareCategoryName || null;
 }
 
 
@@ -489,7 +428,7 @@ app.post("/api/ebay/list", auth, async (req, res) => {
   if (storeCatId) {
     itemNode = itemNode
       .ele("Storefront")
-        .ele("StoreCategoryID").txt(storeCatId).up()
+        .ele("StoreCategoryName").txt(String(storeCatId)).up()
       .up();
   }
 
@@ -576,16 +515,45 @@ app.post("/api/ebay/list", auth, async (req, res) => {
 
 // ── eBay: get categories (for dropdown) ─────────────────────────────────────
 // ── GET fetch actual Store categories from eBay ───────────────────────────────
-app.get("/api/ebay/store-categories", auth, async (req, res) => {
+app.get("/api/ebay/store-categories", auth, (req, res) => {
+  // Return manually configured Store categories from store_categories.json
+  // Since eBay's API is blocked, categories are entered manually in the UI
   try {
-    if (storeCategoryCache === null) await loadStoreCategoryCache();
-    res.json(storeCategoryCache || {});
+    const STORE_CATS_PATH = path.join(__dirname, "store_categories.json");
+    let cats = {};
+    try { cats = JSON.parse(fs.readFileSync(STORE_CATS_PATH, "utf8")); } catch(e) {}
+    // Also populate storeCategoryCache from this
+    storeCategoryCache = cats;
+    res.json(cats);
   } catch(e) {
-    console.error("store-categories error:", e.message);
-    // Return empty object so UI doesn't hang — user can retry
     res.json({});
   }
 });
+
+app.post("/api/ebay/store-categories", auth, (req, res) => {
+  // Add or update a Store category name → ID mapping manually
+  const { name, id } = req.body;
+  if (!name) return res.status(400).json({ error: "name required" });
+  const STORE_CATS_PATH = path.join(__dirname, "store_categories.json");
+  let cats = {};
+  try { cats = JSON.parse(fs.readFileSync(STORE_CATS_PATH, "utf8")); } catch(e) {}
+  cats[name] = id || name; // use name as ID if no ID provided
+  fs.writeFileSync(STORE_CATS_PATH, JSON.stringify(cats, null, 2));
+  storeCategoryCache = cats;
+  res.json({ success: true });
+});
+
+app.delete("/api/ebay/store-categories/:name", auth, (req, res) => {
+  const STORE_CATS_PATH = path.join(__dirname, "store_categories.json");
+  let cats = {};
+  try { cats = JSON.parse(fs.readFileSync(STORE_CATS_PATH, "utf8")); } catch(e) {}
+  delete cats[decodeURIComponent(req.params.name)];
+  fs.writeFileSync(STORE_CATS_PATH, JSON.stringify(cats, null, 2));
+  storeCategoryCache = cats;
+  res.json({ success: true });
+});
+
+
 
 // ── GET Square catalog categories ─────────────────────────────────────────────
 app.get("/api/square/categories", auth, async (req, res) => {
@@ -1142,7 +1110,7 @@ async function relistOnEbay(entry) {
   if (storeCatId) {
     itemNode = itemNode
       .ele("Storefront")
-        .ele("StoreCategoryID").txt(storeCatId).up()
+        .ele("StoreCategoryName").txt(String(storeCatId)).up()
       .up();
   }
 
@@ -1998,8 +1966,34 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
           imageUrl,
         });
 
-        // 4. Resolve/create Store category
-        const storeCatId = await getOrCreateStoreCategory(categoryId).catch(() => null);
+        // 4. Resolve Store category from SKU's Square category name
+        // For bulk revise we look up Square category via the catalog API
+        let squareCategoryName = null;
+        if (sku) {
+          try {
+            const sqRes = await fetch(`${SQUARE_BASE}/v2/catalog/search`, {
+              method: "POST",
+              headers: squareHeaders(),
+              body: JSON.stringify({ object_types: ["ITEM_VARIATION"], query: { exact_query: { attribute_name: "sku", attribute_value: sku } } })
+            });
+            const sqData = await sqRes.json();
+            const variation = (sqData.objects || [])[0];
+            if (variation) {
+              const parentId = variation.item_variation_data?.item_id;
+              if (parentId) {
+                const parentRes = await fetch(`${SQUARE_BASE}/v2/catalog/object/${parentId}`, { headers: squareHeaders() });
+                const parentData = await parentRes.json();
+                const catId = parentData.object?.item_data?.category_id;
+                if (catId) {
+                  const catRes = await fetch(`${SQUARE_BASE}/v2/catalog/object/${catId}`, { headers: squareHeaders() });
+                  const catData = await catRes.json();
+                  squareCategoryName = catData.object?.category_data?.name || null;
+                }
+              }
+            }
+          } catch(e) { /* skip - Store category is optional */ }
+        }
+        const storeCatId = squareCategoryName || null;
 
         // 5. Build ReviseFixedPriceItem XML
         let reviseNode = create({ version: "1.0", encoding: "utf-8" })
@@ -2017,7 +2011,7 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
         if (storeCatId) {
           reviseNode = reviseNode
             .ele("Storefront")
-              .ele("StoreCategoryID").txt(storeCatId).up()
+              .ele("StoreCategoryName").txt(String(storeCatId)).up()
             .up();
         }
 
@@ -2041,7 +2035,7 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
           const warnings = [].concat(reviseResp?.Errors || []).filter(e => e.SeverityCode === "Warning");
           if (warnings.length) console.log(`[${itemId}] warnings: ${warnings.map(w => w.ShortMessage).join("; ")}`);
           send({ type: "progress", index: i + 1, total, itemId, title, sku, status: "done",
-            storeCat: storeCatId ? (EBAY_TO_STORE_CATEGORY[String(categoryId)] || categoryId) : null });
+            storeCat: storeCatId || null });
           succeeded++;
         }
       } catch(e) {
@@ -2477,7 +2471,7 @@ app.post("/api/queue/approve", auth, async (req, res) => {
           .ele("StartPrice").txt(String(finalPrice)).up();
 
     if (!skipCondition) itemNode = itemNode.ele("ConditionID").txt("1000").up();
-    if (storeCatId) itemNode = itemNode.ele("Storefront").ele("StoreCategoryID").txt(storeCatId).up().up();
+    if (storeCatId) itemNode = itemNode.ele("Storefront").ele("StoreCategoryName").txt(String(storeCatId)).up().up();
 
     itemNode = itemNode
       .ele("Country").txt("US").up()
