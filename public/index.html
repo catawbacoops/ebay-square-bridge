@@ -861,7 +861,7 @@
     const pwd = document.getElementById('pwd-input').value.trim();
     if (!pwd) return;
     PASSWORD = pwd;
-    fetch('/api/square/products?q=test', { headers: { 'x-dashboard-password': pwd } })
+    fetch('/api/queue/stats', { headers: { 'x-dashboard-password': pwd } })
       .then(r => {
         if (r.status === 401) {
           document.getElementById('login-err').textContent = 'Incorrect password.';
@@ -869,6 +869,7 @@
         } else {
           document.getElementById('login-screen').style.display = 'none';
           document.getElementById('app').style.display = 'block';
+          switchTab('search');
           loadQueue();
           loadEbayListings();
         }
