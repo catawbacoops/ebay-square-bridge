@@ -262,10 +262,10 @@
   </header>
 
   <div class="tab-bar">
-    <button class="tab-btn active" id="tab-btn-queue" onclick="switchTab('queue')">
+    <button class="tab-btn active" id="tab-btn-search" onclick="switchTab('search')">Search &amp; Add</button>
+    <button class="tab-btn" id="tab-btn-queue" onclick="switchTab('queue')">
       ✦ Approval Queue <span class="tab-badge green" id="queue-badge" style="display:none;">0</span>
     </button>
-    <button class="tab-btn" id="tab-btn-search" onclick="switchTab('search')">Search &amp; Add</button>
     <button class="tab-btn" id="tab-btn-active" onclick="switchTab('active')">Active Listings</button>
     <button class="tab-btn" id="tab-btn-ended" onclick="switchTab('ended')">Ended Listings</button>
     <button class="tab-btn" id="tab-btn-categories" onclick="switchTab('categories')">⚙ Categories</button>
@@ -293,12 +293,12 @@
     </div>
 
     <!-- ── QUEUE TAB ── -->
-    <div class="tab-panel active" id="tab-queue">
+    <div class="tab-panel" id="tab-queue">
       <div id="queue-view"></div>
     </div>
 
     <!-- ── SEARCH TAB ── -->
-    <div class="tab-panel" id="tab-search">
+    <div class="tab-panel active" id="tab-search">
       <div class="panel">
         <div class="panel-header">
           <h2>Search Square Catalog</h2>
@@ -1066,32 +1066,15 @@
         </div>
         <div class="field-item">
           <label>Weight (lbs)</label>
-          <input type="number" id="q-weight-${item.id}" value="${ai.weight || item.product.weight || ''}" step="0.01" min="0.01" />
-        </div>
-        <div class="field-item">
-          <label>Category ID</label>
-          <input type="text" id="q-cat-${item.id}" value="${esc(ai.categoryId || '79631')}" />
-          ${ai.categoryRationale ? `<div class="field-hint">→ ${esc(ai.categoryRationale)}</div>` : ''}
+          <input type="number" id="q-weight-${item.id}" value="${item.product.weight || ''}" step="0.01" min="0.01" />
         </div>
         <div class="field-item">
           <label>Quantity</label>
           <input type="number" id="q-qty-${item.id}" value="5" min="1" />
         </div>
         <div class="field-item">
-          <label>Brand</label>
-          <input type="text" id="q-brand-${item.id}" value="${esc(ai.brand || 'Unbranded')}" />
-        </div>
-        <div class="field-item">
-          <label>Type</label>
-          <input type="text" id="q-type-${item.id}" value="${esc(ai.type || '')}" />
-        </div>
-      </div>
-
-      <!-- Description preview -->
-      <div style="font-size:11px;font-weight:600;color:#6e6e82;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Description Preview</div>
-      <div class="desc-preview-wrap">
-        <div class="desc-preview-container">
-          <div class="desc-preview-inner">${ai.descriptionHtml || ''}</div>
+          <label>Store Category</label>
+          <input type="text" value="${esc(item.product.category || '—')}" disabled style="opacity:0.6;" />
         </div>
       </div>
 
@@ -1153,9 +1136,6 @@
         body: JSON.stringify({
           id,
           selectedTitle,
-          categoryId: document.getElementById('q-cat-' + id)?.value,
-          brand: document.getElementById('q-brand-' + id)?.value,
-          type: document.getElementById('q-type-' + id)?.value,
           weight: document.getElementById('q-weight-' + id)?.value,
           price: document.getElementById('q-price-' + id)?.value,
           quantity: document.getElementById('q-qty-' + id)?.value,
