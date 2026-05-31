@@ -635,11 +635,18 @@ app.delete("/api/ebay/store-categories/:name", auth, (req, res) => {
 // ── Diagnostic: show what Square categories resolve to ───────────────────────
 app.get("/api/debug/categories", auth, async (req, res) => {
   try {
-    const catRes = await fetch(`${SQUARE_BASE}/v2/catalog/list?types=CATEGORY`, {
-      headers: squareHeaders()
-    });
-    const catData = await catRes.json();
-    const cats = (catData.objects || []).map(c => ({
+    // Paginate through all Square categories
+    let allCats = [];
+    let cursor = null;
+    do {
+      const url = `${SQUARE_BASE}/v2/catalog/list?types=CATEGORY${cursor ? `&cursor=${cursor}` : ''}`;
+      const catRes = await fetch(url, { headers: squareHeaders() });
+      const catData = await catRes.json();
+      allCats = allCats.concat(catData.objects || []);
+      cursor = catData.cursor || null;
+    } while (cursor);
+
+    const cats = allCats.map(c => ({
       id: c.id,
       name: c.category_data?.name || "",
       parentId: c.category_data?.parent_category?.id || null,
@@ -663,12 +670,17 @@ app.get("/api/debug/categories", auth, async (req, res) => {
       return { resolved: filtered[0] || chain[0] || "", chain: chain.reverse() };
     };
 
+    // Show only unique resolved names with match status
+    const seen = new Set();
     const result = cats
-      .filter(c => !isAlphaGroup(c.name))
-      .map(c => ({ ...resolve(c.id), squareName: c.name, ebayStoreMatch: !!STORE_CATEGORY_IDS[resolve(c.id).resolved] }))
+      .map(c => {
+        const r = resolve(c.id);
+        return { ...r, squareName: c.name, ebayStoreMatch: !!STORE_CATEGORY_IDS[r.resolved] };
+      })
+      .filter(c => { if (seen.has(c.resolved)) return false; seen.add(c.resolved); return true; })
       .sort((a, b) => a.resolved.localeCompare(b.resolved));
 
-    res.json({ storeIds: STORE_CATEGORY_IDS, squareCategories: result });
+    res.json({ totalCats: cats.length, storeIds: STORE_CATEGORY_IDS, resolvedCategories: result });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
