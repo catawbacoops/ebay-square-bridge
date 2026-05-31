@@ -389,31 +389,19 @@
     <div class="tab-panel" id="tab-categories">
       <div class="panel">
         <div class="panel-header">
-          <h2>eBay Category Map</h2>
+          <h2>Store Category Mapping</h2>
           <div style="display:flex;gap:10px;align-items:center;">
             <span id="cat-status" style="font-size:12px;color:#6e6e82;"></span>
-            <button class="sync-btn" onclick="loadCategories()" id="load-cats-btn">↻ Load from eBay</button>
+            <button class="sync-btn" onclick="loadCategories()" id="load-cats-btn">↻ Load Categories</button>
           </div>
         </div>
         <div class="panel-body">
-
-          <!-- Current map -->
-          <div style="margin-bottom:20px;">
-            <div style="font-size:12px;font-weight:600;color:#6e6e82;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">
-              Current Category Map <span style="font-weight:400;color:#555566;">(used by autofill + Store categories)</span>
-            </div>
-            <div id="current-map-table"></div>
+          <div style="font-size:13px;color:#6e6e82;margin-bottom:16px;line-height:1.6;">
+            Maps your <strong>Square categories</strong> to <strong>eBay Store categories</strong>.
+            When a product is listed, it's placed in the matching Store category automatically.
+            The Store category name must exactly match what you created in eBay Seller Hub.
           </div>
-
-          <!-- eBay live tree -->
-          <div>
-            <div style="font-size:12px;font-weight:600;color:#6e6e82;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">
-              eBay Live Category Tree <span style="font-weight:400;color:#555566;">(Food &amp; Beverages and subcategories)</span>
-            </div>
-            <input type="text" id="cat-filter" placeholder="Filter categories…" oninput="filterCategories()"
-              style="width:100%;margin-bottom:10px;font-size:13px;padding:7px 10px;border:1.5px solid #35353f;border-radius:7px;" />
-            <div id="cat-tree"><div class="empty-state">Click "Load from eBay" to fetch live category data</div></div>
-          </div>
+          <div id="cat-map-table"><div class="empty-state">Click ↻ Load Categories to start</div></div>
         </div>
       </div>
     </div>
@@ -494,8 +482,102 @@
   let queuePollTimer = null;
 
   // ── Categories ────────────────────────────────────────────────────────────
-  let allCategories = [];
-  let ourCategoryMap = {}; // id -> storeName
+  let squareCategories = [];   // [{ id, name }]
+  let storeCategories = {};    // { "Store Cat Name": "storeId" }
+  let storeMap = {};           // { "Square Cat Name": "Store Cat Name" }
+
+  async function loadCategories() {
+    const btn = document.getElementById('load-cats-btn');
+    const status = document.getElementById('cat-status');
+    btn.textContent = 'Loading…'; btn.disabled = true;
+    status.textContent = 'Loading…';
+
+    try {
+      const [sqRes, storeRes, mapRes] = await Promise.all([
+        fetch('/api/square/categories', { headers: { 'x-dashboard-password': PASSWORD } }).then(r => safeJson(r)),
+        fetch('/api/ebay/store-categories', { headers: { 'x-dashboard-password': PASSWORD } }).then(r => safeJson(r)),
+        fetch('/api/store-map', { headers: { 'x-dashboard-password': PASSWORD } }).then(r => safeJson(r)),
+      ]);
+
+      squareCategories = Array.isArray(sqRes) ? sqRes : [];
+      storeCategories = (storeRes && !storeRes.error) ? storeRes : {};
+      storeMap = (mapRes && !mapRes.error) ? mapRes : {};
+
+      const storeCount = Object.keys(storeCategories).length;
+      status.textContent = `${squareCategories.length} Square categories · ${storeCount} Store categories`;
+      renderCategoryMap();
+    } catch(e) {
+      status.textContent = 'Error: ' + e.message;
+    } finally {
+      btn.textContent = '↻ Load Categories'; btn.disabled = false;
+    }
+  }
+
+  function renderCategoryMap() {
+    const el = document.getElementById('cat-map-table');
+    const storeNames = Object.keys(storeCategories).sort();
+
+    if (!squareCategories.length) {
+      el.innerHTML = '<div class="empty-state">No Square categories found</div>';
+      return;
+    }
+
+    const rows = squareCategories.map(sq => {
+      const mapped = storeMap[sq.name] || '';
+      const isValid = mapped && storeCategories[mapped];
+      const statusIcon = !mapped ? '○' : isValid ? '✓' : '⚠';
+      const statusColor = !mapped ? '#555566' : isValid ? '#1D9E75' : '#f59e0b';
+      const statusTitle = !mapped ? 'Not mapped' : isValid ? `Mapped to "${mapped}"` : `"${mapped}" not found in Store`;
+
+      const options = storeNames.map(n =>
+        `<option value="${esc(n)}" ${n === mapped ? 'selected' : ''}>${esc(n)}</option>`
+      ).join('');
+
+      return `<tr>
+        <td style="font-weight:500;">${esc(sq.name)}</td>
+        <td>
+          <select onchange="saveStoreMapEntry('${esc(sq.name)}', this.value)"
+            style="width:100%;padding:5px 8px;font-size:13px;border:1.5px solid #35353f;border-radius:6px;">
+            <option value="">— not mapped —</option>
+            ${options}
+          </select>
+        </td>
+        <td style="text-align:center;color:${statusColor};font-size:16px;" title="${statusTitle}">${statusIcon}</td>
+      </tr>`;
+    }).join('');
+
+    el.innerHTML = `
+      <table class="listings-table">
+        <thead><tr>
+          <th>Square Category</th>
+          <th>eBay Store Category</th>
+          <th style="width:40px;"></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${storeNames.length === 0 ? '<div style="margin-top:10px;font-size:12px;color:#f59e0b;">⚠ No Store categories found — make sure your eBay Store categories are set up in Seller Hub.</div>' : ''}`;
+  }
+
+  async function saveStoreMapEntry(squareName, storeName) {
+    if (!storeName) {
+      // Delete the mapping
+      await fetch('/api/store-map/' + encodeURIComponent(squareName), {
+        method: 'DELETE', headers: { 'x-dashboard-password': PASSWORD }
+      });
+      delete storeMap[squareName];
+    } else {
+      await fetch('/api/store-map', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD },
+        body: JSON.stringify({ squareName, storeName })
+      });
+      storeMap[squareName] = storeName;
+    }
+    renderCategoryMap();
+    showToast(storeName ? `✓ ${squareName} → ${storeName}` : `Removed mapping for ${squareName}`);
+  }
+
+
 
   async function loadCategories() {
     const btn = document.getElementById('load-cats-btn');
@@ -763,7 +845,7 @@
     if (name === 'active') loadEbayListings();
     if (name === 'ended') loadEndedListings();
     if (name === 'queue') renderQueueView();
-    if (name === 'categories') renderCurrentMap();
+    if (name === 'categories') { renderCategoryMap(); if (!squareCategories.length) loadCategories(); }
   }
   function switchTab(name) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -1361,7 +1443,7 @@
 
     btn.disabled = true; btn.textContent = 'Listing…';
     try {
-      const res = await fetch('/api/ebay/list', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ name: title, description: desc, sku, ebayPrice: price, quantity: qty, categoryId: cat, conditionId: cond, brand, itemType, imageUrl: currentProduct?.imageUrl||'', weightLbs }) });
+      const res = await fetch('/api/ebay/list', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dashboard-password': PASSWORD }, body: JSON.stringify({ name: title, description: desc, sku, ebayPrice: price, quantity: qty, categoryId: cat, conditionId: cond, brand, itemType, imageUrl: currentProduct?.imageUrl||'', weightLbs, squareCategory: currentProduct?.category||'' }) });
       const data = await safeJson(res);
       if (data.error) { errEl.textContent = data.error; btn.disabled = false; btn.textContent = 'List on eBay'; return; }
       closeModal(); showToast('Listed! Item ID: ' + data.itemId, 'success');
