@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- v20260531200947 -->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -11,16 +12,6 @@
 
 
     /* ── Login ── */
-    #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    .login-box { background: #24242c; border-radius: 12px; padding: 36px 32px; width: 340px; box-shadow: 0 2px 16px rgba(0,0,0,0.3); }
-    .login-box h1 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
-    .login-box p { font-size: 13px; color: #6e6e82; margin-bottom: 24px; }
-    .login-box input { width: 100%; padding: 10px 12px; border: 1.5px solid #35353f; border-radius: 8px; font-size: 14px; margin-bottom: 12px; outline: none; background: #1e1e26; color: #e8e8f0; }
-    .login-box input:focus { border-color: #E53238; }
-    .login-box button { width: 100%; padding: 11px; background: #E53238; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 500; cursor: pointer; }
-    .login-box button:hover { background: #c42b30; }
-    .login-err { font-size: 13px; color: #c42b30; margin-top: 8px; }
-
     /* ── App shell ── */
     #app { display: none; }
     header { background: #24242c; border-bottom: 1px solid #35353f; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; }
@@ -252,19 +243,8 @@
 
 
 
-<!-- Login -->
-<div id="login-screen">
-  <div class="login-box">
-    <h1>Grain Mill Co-op</h1>
-    <p>eBay Automation Dashboard</p>
-    <input type="password" id="pwd-input" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()" />
-    <button onclick="doLogin()">Sign In</button>
-    <p class="login-err" id="login-err"></p>
-  </div>
-</div>
-
 <!-- App -->
-<div id="app">
+<div id="app" style="display:block;">
   <header>
     <div class="logo">
       <span class="logo-badge">eBay</span>
@@ -471,7 +451,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-  let PASSWORD = '';
+
   let searchTimeout = null;
   let currentProduct = null;
   let allEbayListings = [];
@@ -863,24 +843,6 @@
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
-  function doLogin() {
-    const pwd = document.getElementById('pwd-input').value.trim();
-    if (!pwd) return;
-    PASSWORD = pwd;
-    fetch('/api/queue/stats', { headers: { 'x-dashboard-password': pwd } })
-      .then(r => {
-        if (r.status === 401) {
-          document.getElementById('login-err').textContent = 'Incorrect password.';
-          PASSWORD = '';
-        } else {
-          document.getElementById('login-screen').style.display = 'none';
-          document.getElementById('app').style.display = 'block';
-          switchTab('queue');
-          loadQueue();
-          loadEbayListings();
-        }
-      }).catch(() => { document.getElementById('login-err').textContent = 'Could not connect to server.'; });
-  }
 
   // ── Queue ─────────────────────────────────────────────────────────────────
   // Safe fetch-JSON: never throws on empty/non-JSON response
@@ -893,7 +855,7 @@
 
   async function loadQueue() {
     try {
-      const res = await fetch('/api/queue', { headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/queue', { headers: {} });
       queueItems = await safeJson(res);
       if (!Array.isArray(queueItems)) { console.error('Queue load error:', queueItems); queueItems = []; }
       updateQueueBadge();
@@ -1285,7 +1247,7 @@
     document.getElementById('search-results').innerHTML = '<div class="empty-state">Searching…</div>';
     try {
       const markup = parseFloat(document.getElementById('markup-input').value) || 10;
-      const res = await fetch('/api/square/products?q=' + encodeURIComponent(q), { headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/square/products?q=' + encodeURIComponent(q), { headers: {} });
       const items = await res.json();
       if (items.error) { document.getElementById('search-results').innerHTML = '<div class="empty-state" style="color:#c42b30;">Error: ' + esc(items.error) + '</div>'; return; }
       if (!items.length) { document.getElementById('search-results').innerHTML = '<div class="empty-state">No products found</div>'; return; }
@@ -1472,7 +1434,7 @@
     el.innerHTML = '<div class="empty-state">Loading…</div>';
     btn.textContent = 'Loading…'; btn.disabled = true;
     try {
-      const res = await fetch('/api/ebay/listings?page=' + page, { headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/ebay/listings?page=' + page, { headers: {} });
       const data = await res.json();
       if (data.error) { el.innerHTML = '<div class="empty-state" style="color:#c42b30;">' + esc(data.error) + '</div>'; return; }
       allEbayListings = data.listings || [];
@@ -1543,7 +1505,7 @@
     const btn = document.getElementById('refresh-ended-btn');
     el.innerHTML = '<div class="empty-state">Loading…</div>'; btn.textContent = 'Loading…'; btn.disabled = true;
     try {
-      const res = await fetch('/api/ebay/ended-listings', { headers: { 'x-dashboard-password': PASSWORD } });
+      const res = await fetch('/api/ebay/ended-listings', { headers: {} });
       const data = await res.json();
       allEndedListings = data || [];
       const tabBtn = document.getElementById('tab-btn-ended');
