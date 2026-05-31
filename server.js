@@ -170,55 +170,112 @@ const SQUARE_TO_STORE_FALLBACK = {
   "The Grain Mill Cooperative": null,  // ignore
 };
 
-// Static Store category name → ID map (from eBay Seller Hub - May 2026)
-const STORE_CATEGORY_IDS = {
-  "Baking":                 "44875673011",
-  "Beverages & Drink Mixes":"44875674011",
-  "Breakfast":              "44875675011",
-  "Candy":                  "44875676011",
-  "Canned Meats":           "44875677011",
-  "Chocolate":              "44875678011",
-  "Condiment":              "44875679011",
-  "Dairy":                  "44875680011",
-  "Fruit":                  "44875681011",
-  "Grain":                  "44875682011",
-  "Ice Cream Needs":        "44875683011",
-  "Nuts":                   "44875684011",
-  "Pasta":                  "44875685011",
-  "Pickles":                "44875686011",
-  "Snacks":                 "44875687011",
-  "Spice & Seasoning":      "44875688011",
-  "Salad Fixings":          "44875689011",
-  "Sauces":                 "44875690011",
-  "Seeds":                  "44875691011",
-  "Side Dish":              "44875692011",
-  "Skillet Supper":         "44875693011",
-  "Soup":                   "44875694011",
-  "Store Supplies":         "44875695011",
-  "Vegetables":             "44875696011",
-  "Wild Animal Care":       "44875697011",
-};
+// Store category IDs are now managed dynamically via getOrCreateStoreCategory()
+// The cache (storeCategoryCache) is populated from eBay on first use.
+// STORE_CATEGORY_IDS kept as empty object for backward compatibility.
+const STORE_CATEGORY_IDS = {};
 
+// Load existing Store categories from eBay into cache
 async function loadStoreCategoryCache() {
-  storeCategoryCache = { ...STORE_CATEGORY_IDS };
-  console.log(`Store category cache loaded — ${Object.keys(storeCategoryCache).length} categories`);
+  const xml = create({ version: "1.0", encoding: "utf-8" })
+    .ele("GetStoreRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+      .ele("RequesterCredentials")
+        .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+      .up()
+      .ele("LevelLimit").txt("1").up()
+    .up()
+    .end({ prettyPrint: false });
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(EBAY_API_URL, {
+      method: "POST", headers: ebayHeaders("GetStore"), body: xml, signal: controller.signal
+    });
+    clearTimeout(timeout);
+    const parsed = await parseXml(await res.text());
+    const cats = [].concat(parsed?.GetStoreResponse?.Store?.CustomCategories?.CustomCategory || []);
+    storeCategoryCache = {};
+    cats.forEach(c => {
+      if (c.Name && c.CategoryID) storeCategoryCache[String(c.Name)] = String(c.CategoryID);
+    });
+    console.log(`Loaded ${Object.keys(storeCategoryCache).length} Store categories from eBay`);
+  } catch(e) {
+    clearTimeout(timeout);
+    storeCategoryCache = storeCategoryCache || {};
+    console.warn("loadStoreCategoryCache failed:", e.message, "— using cached/empty");
+  }
 }
 
-// Look up eBay Store category ID from Square category name
-async function getStoreCategoryId(squareCategoryName) {
-  if (!squareCategoryName) return null;
-  // Direct match first
-  if (STORE_CATEGORY_IDS[squareCategoryName]) return STORE_CATEGORY_IDS[squareCategoryName];
-  // Try fallback map for mismatches
-  const fallbackName = SQUARE_TO_STORE_FALLBACK[squareCategoryName];
-  if (fallbackName === null) return null; // explicitly ignored
-  if (fallbackName && STORE_CATEGORY_IDS[fallbackName]) return STORE_CATEGORY_IDS[fallbackName];
-  console.warn(`No Store category ID for Square category: "${squareCategoryName}"`);
-  return null;
+// Get or create a Store category by name.
+// Checks cache first, then eBay, creates if missing.
+async function getOrCreateStoreCategory(categoryName) {
+  if (!categoryName) return null;
+
+  // Apply fallback name mapping
+  const mappedName = SQUARE_TO_STORE_FALLBACK.hasOwnProperty(categoryName)
+    ? SQUARE_TO_STORE_FALLBACK[categoryName]
+    : categoryName;
+  if (mappedName === null) return null; // explicitly ignored
+
+  // Load cache if not yet populated
+  if (storeCategoryCache === null) {
+    await loadStoreCategoryCache().catch(() => { storeCategoryCache = {}; });
+  }
+
+  // Return cached ID if exists
+  if (storeCategoryCache[mappedName]) return storeCategoryCache[mappedName];
+
+  // Create the category on eBay
+  console.log(`Creating Store category: "${mappedName}"`);
+  try {
+    const xml = create({ version: "1.0", encoding: "utf-8" })
+      .ele("SetStoreCategoriesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+        .ele("RequesterCredentials")
+          .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+        .up()
+        .ele("Action").txt("Add").up()
+        .ele("StoreCategories")
+          .ele("CustomCategory")
+            .ele("CategoryID").txt("-1").up()
+            .ele("Name").txt(mappedName).up()
+            .ele("Order").txt("999").up()
+          .up()
+        .up()
+      .up()
+      .end({ prettyPrint: false });
+
+    const res = await fetch(EBAY_API_URL, { method: "POST", headers: ebayHeaders("SetStoreCategories"), body: xml });
+    const parsed = await parseXml(await res.text());
+    const resp = parsed?.SetStoreCategoriesResponse;
+
+    if (resp?.Ack === "Failure") {
+      const errors = [].concat(resp?.Errors || []).map(e => e.ShortMessage).join("; ");
+      console.error(`SetStoreCategories failed for "${mappedName}": ${errors}`);
+      return null;
+    }
+
+    // Extract new ID from response
+    const mappings = [].concat(resp?.CategoryMapping || []);
+    const newId = mappings[0]?.NewCategoryID || null;
+    if (newId) {
+      storeCategoryCache[mappedName] = String(newId);
+      console.log(`✓ Created Store category "${mappedName}" → ${newId}`);
+      return String(newId);
+    }
+
+    // Reload cache to pick up new ID
+    await loadStoreCategoryCache().catch(() => {});
+    return storeCategoryCache[mappedName] || null;
+  } catch(e) {
+    console.error(`getOrCreateStoreCategory error for "${mappedName}":`, e.message);
+    return null;
+  }
 }
 
-async function getOrCreateStoreCategory(squareCategoryName) {
-  return getStoreCategoryId(squareCategoryName);
+// Alias for backward compatibility
+async function getStoreCategoryId(categoryName) {
+  return getOrCreateStoreCategory(categoryName);
 }
 
 
@@ -2161,10 +2218,7 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
             .up()
             .ele("Item")
               .ele("ItemID").txt(String(itemId)).up()
-              .ele("Description").txt(html).up()
-              .ele("PrimaryCategory")
-                .ele("CategoryID").txt(String(categoryId)).up()
-              .up();
+              .ele("Description").txt(html).up();
 
         if (storeCatId) {
           reviseNode = reviseNode
