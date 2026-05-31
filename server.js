@@ -154,18 +154,50 @@ async function buildPolicyXml(itemNode, { weightPounds, weightOunces, pkgDepth, 
 }
 
 
+// Static Store category name → ID map (from eBay Seller Hub - May 2026)
+const STORE_CATEGORY_IDS = {
+  "Baking":                 "44875673011",
+  "Beverages & Drink Mixes":"44875674011",
+  "Breakfast":              "44875675011",
+  "Candy":                  "44875676011",
+  "Canned Meats":           "44875677011",
+  "Chocolate":              "44875678011",
+  "Condiment":              "44875679011",
+  "Dairy":                  "44875680011",
+  "Fruit":                  "44875681011",
+  "Grain":                  "44875682011",
+  "Ice Cream Needs":        "44875683011",
+  "Nuts":                   "44875684011",
+  "Pasta":                  "44875685011",
+  "Pickles":                "44875686011",
+  "Snacks":                 "44875687011",
+  "Spice & Seasoning":      "44875688011",
+  "Salad Fixings":          "44875689011",
+  "Sauces":                 "44875690011",
+  "Seeds":                  "44875691011",
+  "Side Dish":              "44875692011",
+  "Skillet Supper":         "44875693011",
+  "Soup":                   "44875694011",
+  "Store Supplies":         "44875695011",
+  "Vegetables":             "44875696011",
+  "Wild Animal Care":       "44875697011",
+};
+
 async function loadStoreCategoryCache() {
-  // No-op: Store categories use Square category names directly
-  storeCategoryCache = {};
+  storeCategoryCache = { ...STORE_CATEGORY_IDS };
+  console.log(`Store category cache loaded — ${Object.keys(storeCategoryCache).length} categories`);
 }
 
-// Use Square category name directly as the eBay Store category name
+// Look up eBay Store category ID from Square category name
 async function getStoreCategoryId(squareCategoryName) {
-  return squareCategoryName || null;
+  if (!squareCategoryName) return null;
+  const id = STORE_CATEGORY_IDS[squareCategoryName];
+  if (!id) console.warn(`No Store category ID for Square category: "${squareCategoryName}"`);
+  return id || null;
 }
 
 async function getOrCreateStoreCategory(squareCategoryName) {
-  return squareCategoryName || null;
+  return getStoreCategoryId(squareCategoryName);
 }
 
 
@@ -484,7 +516,7 @@ app.post("/api/ebay/list", auth, async (req, res) => {
   if (storeCatId) {
     itemNode = itemNode
       .ele("Storefront")
-        .ele("StoreCategoryName").txt(String(storeCatId)).up()
+        .ele("StoreCategoryID").txt(String(storeCatId)).up()
       .up();
   }
 
@@ -572,18 +604,7 @@ app.post("/api/ebay/list", auth, async (req, res) => {
 // ── eBay: get categories (for dropdown) ─────────────────────────────────────
 // ── GET fetch actual Store categories from eBay ───────────────────────────────
 app.get("/api/ebay/store-categories", auth, (req, res) => {
-  // Return manually configured Store categories from store_categories.json
-  // Since eBay's API is blocked, categories are entered manually in the UI
-  try {
-    const STORE_CATS_PATH = path.join(__dirname, "store_categories.json");
-    let cats = {};
-    try { cats = JSON.parse(fs.readFileSync(STORE_CATS_PATH, "utf8")); } catch(e) {}
-    // Also populate storeCategoryCache from this
-    storeCategoryCache = cats;
-    res.json(cats);
-  } catch(e) {
-    res.json({});
-  }
+  res.json(STORE_CATEGORY_IDS);
 });
 
 app.post("/api/ebay/store-categories", auth, (req, res) => {
@@ -611,7 +632,49 @@ app.delete("/api/ebay/store-categories/:name", auth, (req, res) => {
 
 
 
-// ── GET Square catalog categories ─────────────────────────────────────────────
+// ── Diagnostic: show what Square categories resolve to ───────────────────────
+app.get("/api/debug/categories", auth, async (req, res) => {
+  try {
+    const catRes = await fetch(`${SQUARE_BASE}/v2/catalog/list?types=CATEGORY`, {
+      headers: squareHeaders()
+    });
+    const catData = await catRes.json();
+    const cats = (catData.objects || []).map(c => ({
+      id: c.id,
+      name: c.category_data?.name || "",
+      parentId: c.category_data?.parent_category?.id || null,
+    }));
+
+    // Build hierarchy map
+    const catMap = {};
+    cats.forEach(c => { catMap[c.id] = { name: c.name, parentId: c.parentId }; });
+
+    const isAlphaGroup = (name) => /^[A-Z][a-z]?(-[A-Z][a-z]?)?$/.test(name.trim());
+    const resolve = (leafId) => {
+      const chain = [];
+      let cur = leafId;
+      const seen = new Set();
+      while (cur && catMap[cur] && !seen.has(cur)) {
+        seen.add(cur);
+        chain.push(catMap[cur].name);
+        cur = catMap[cur].parentId;
+      }
+      const filtered = chain.filter(n => n && !isAlphaGroup(n)).reverse();
+      return { resolved: filtered[0] || chain[0] || "", chain: chain.reverse() };
+    };
+
+    const result = cats
+      .filter(c => !isAlphaGroup(c.name))
+      .map(c => ({ ...resolve(c.id), squareName: c.name, ebayStoreMatch: !!STORE_CATEGORY_IDS[resolve(c.id).resolved] }))
+      .sort((a, b) => a.resolved.localeCompare(b.resolved));
+
+    res.json({ storeIds: STORE_CATEGORY_IDS, squareCategories: result });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 app.get("/api/square/categories", auth, async (req, res) => {
   try {
     const response = await fetch(`${SQUARE_BASE}/v2/catalog/list?types=CATEGORY`, {
@@ -1166,7 +1229,7 @@ async function relistOnEbay(entry) {
   if (storeCatId) {
     itemNode = itemNode
       .ele("Storefront")
-        .ele("StoreCategoryName").txt(String(storeCatId)).up()
+        .ele("StoreCategoryID").txt(String(storeCatId)).up()
       .up();
   }
 
@@ -2067,7 +2130,7 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
         if (storeCatId) {
           reviseNode = reviseNode
             .ele("Storefront")
-              .ele("StoreCategoryName").txt(String(storeCatId)).up()
+              .ele("StoreCategoryID").txt(String(storeCatId)).up()
             .up();
         }
 
@@ -2527,7 +2590,7 @@ app.post("/api/queue/approve", auth, async (req, res) => {
           .ele("StartPrice").txt(String(finalPrice)).up();
 
     if (!skipCondition) itemNode = itemNode.ele("ConditionID").txt("1000").up();
-    if (storeCatId) itemNode = itemNode.ele("Storefront").ele("StoreCategoryName").txt(String(storeCatId)).up().up();
+    if (storeCatId) itemNode = itemNode.ele("Storefront").ele("StoreCategoryID").txt(String(storeCatId)).up().up();
 
     itemNode = itemNode
       .ele("Country").txt("US").up()
