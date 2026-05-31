@@ -2151,7 +2151,7 @@ app.get("/api/ebay/bulk-revise", auth, async (req, res) => {
             }
           } catch(e) { /* skip - Store category is optional */ }
         }
-        const storeCatId = squareCategoryName || null;
+        const storeCatId = squareCategoryName ? await getStoreCategoryId(squareCategoryName).catch(() => null) : null;
 
         // 5. Build ReviseFixedPriceItem XML
         let reviseNode = create({ version: "1.0", encoding: "utf-8" })
