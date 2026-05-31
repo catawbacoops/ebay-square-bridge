@@ -318,8 +318,7 @@ app.get("/api/square/products", auth, async (req, res) => {
       } catch(e) { /* images optional */ }
     }
 
-    // Collect category IDs to batch-fetch names
-    // Square API v2 uses either category_id (old) or categories[0].id (new)
+    // Collect ALL category IDs for hierarchy resolution
     const categoryIds = [];
     (searchData.objects || []).forEach((obj) => {
       const catId = obj.item_data?.category_id
@@ -328,8 +327,9 @@ app.get("/api/square/products", auth, async (req, res) => {
       if (catId && !categoryIds.includes(catId)) categoryIds.push(catId);
     });
 
-    // Batch fetch category names from Square
-    let categoryNameMap = {};
+    // Batch fetch categories + walk parent hierarchy to find best Store category name.
+    // Strategy: skip A-Z alphabet groupings (e.g. "A-C"), return highest meaningful ancestor.
+    let categoryNameMap = {}; // leafId -> resolved Store category name
     if (categoryIds.length) {
       try {
         const catRes = await fetch(`${SQUARE_BASE}/v2/catalog/batch-retrieve`, {
@@ -338,13 +338,52 @@ app.get("/api/square/products", auth, async (req, res) => {
           body: JSON.stringify({ object_ids: categoryIds }),
         });
         const catData = await catRes.json();
+
+        // Build id -> { name, parentId } map; collect parent IDs to fetch
+        const catHierarchy = {};
+        const parentIds = [];
         (catData.objects || []).forEach((cat) => {
-          if (cat.category_data?.name) categoryNameMap[cat.id] = cat.category_data.name;
+          const parentId = cat.category_data?.parent_category?.id || null;
+          catHierarchy[cat.id] = { name: cat.category_data?.name || "", parentId };
+          if (parentId && !categoryIds.includes(parentId) && !parentIds.includes(parentId)) {
+            parentIds.push(parentId);
+          }
         });
-        console.log(`Square categories fetched: ${JSON.stringify(categoryNameMap)}`);
+
+        // Fetch parent categories
+        if (parentIds.length) {
+          const pRes = await fetch(`${SQUARE_BASE}/v2/catalog/batch-retrieve`, {
+            method: "POST", headers: squareHeaders(),
+            body: JSON.stringify({ object_ids: parentIds }),
+          });
+          const pData = await pRes.json();
+          (pData.objects || []).forEach((cat) => {
+            const gpId = cat.category_data?.parent_category?.id || null;
+            catHierarchy[cat.id] = { name: cat.category_data?.name || "", parentId: gpId };
+          });
+        }
+
+        // Resolve: walk chain leaf→root, skip A-Z groupings, pick highest meaningful
+        const isAlphaGroup = (name) => /^[A-Z](-[A-Z])?$/.test(name.trim());
+        const resolve = (leafId) => {
+          const chain = [];
+          let cur = leafId;
+          const seen = new Set();
+          while (cur && catHierarchy[cur] && !seen.has(cur)) {
+            seen.add(cur);
+            chain.push(catHierarchy[cur].name);
+            cur = catHierarchy[cur].parentId;
+          }
+          const meaningful = chain.filter(n => n && !isAlphaGroup(n));
+          return meaningful.length ? meaningful[meaningful.length - 1] : (chain[0] || "");
+        };
+
+        categoryIds.forEach(id => { categoryNameMap[id] = resolve(id); });
+        console.log("Resolved category names:", JSON.stringify(categoryNameMap));
       } catch(e) { console.error("Category fetch error:", e.message); }
     } else {
-      console.log("No category IDs found in search results");
+      const sample = (searchData.objects||[])[0];
+      console.log("No category IDs found. Sample item_data keys:", Object.keys(sample?.item_data || {}).join(", "));
     }
 
     const items = (searchData.objects || []).map((obj) => {
