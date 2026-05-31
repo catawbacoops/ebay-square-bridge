@@ -50,76 +50,11 @@ function removeEndedListing(sku) {
 // Maps eBay marketplace category IDs to exact-mirror Store category names.
 // Store categories are created on demand via SetStoreCategories if they don't exist.
 const EBAY_TO_STORE_CATEGORY = {
-  // Verified from isoldwhat.com (live eBay data) - May 2026
-  // Path: Home & Garden (11700) > Food & Beverages (14308) > Pantry (257942)
-
-  // --- PANTRY parent ---
-  "257942": "Pantry",
-
-  // --- Pasta, Grains & Cereals (257990) subcategories ---
-  "257990": "Pasta, Grains & Cereals",     // parent
-  "257993": "Grains & Cereals",             // leaf - whole grains, wheat berries
-  "257994": "Pasta & Noodles",              // leaf
-  "257996": "Rice",                         // leaf
-
-  // --- Baking & Desserts (257943) subcategories ---
-  "257943": "Baking & Desserts",            // parent
-  "257949": "Baking Mixes",                 // leaf - bread mixes, cake mixes, pancake mixes, FLOUR
-  "257950": "Baking Nuts & Seeds",          // leaf
-  "257951": "Sugar & Sweeteners",           // leaf
-  "257952": "Yeast & Leavening Agents",     // leaf
-  "257953": "Icing & Cake Decorations",     // leaf
-  "257954": "Extracts & Flavoring",         // leaf - THIS is where flour was going!
-  "257955": "Marzipan & Fondant",           // leaf
-
-  // --- Breakfast Cereals ---
-  "257958": "Breakfast Cereals, Muesli & Oats", // leaf
-
-  // --- Herbs, Spices & Seasonings (257975) ---
-  "257975": "Herbs, Spices & Seasonings",   // parent
-  "257976": "Dried Herbs",                  // leaf
-  "257977": "Single Spices",                // leaf - individual spices
-  "257978": "Salt",                         // leaf
-  "257979": "Spice Mixes",                  // leaf - seasoning blends
-
-  // --- Condiments & Sauces (257960) ---
-  "257960": "Condiments & Sauces",          // parent
-  "257961": "Cooking Sauces",               // leaf
-  "257962": "Ketchup",                      // leaf
-  "257963": "Mayonnaise",                   // leaf
-  "257964": "Mustard",                      // leaf
-  "257965": "Vinegar",                      // leaf
-
-  // --- Jam, Honey & Spreads (257982) ---
-  "257982": "Jam, Honey & Spreads",         // parent
-  "257983": "Honey",                        // leaf
-  "257984": "Jam & Marmalade",              // leaf
-  "257985": "Nut Butters",                  // leaf - peanut butter, almond butter
-  "257986": "Yeast Extracts & Spreads",     // leaf
-
-  // --- Other Pantry leaf categories ---
-  "257988": "Longlife Cooking & Baking Fats",  // leaf - ghee, butter powder, shortening
-  "257989": "Cooking Oils & Serving Oils",     // leaf
-  "257987": "Coconut Milk & Cream",            // leaf
-  "257995": "Prepared Food & Ready Meals",     // parent
-  "257998": "Prepared Soups",                  // leaf
-  "257999": "Canned Goods",                    // leaf
-  "258010": "Snacks",                          // parent
-  "258012": "Dried Fruit & Nuts",              // leaf
-  "258013": "Popcorn",                         // leaf
-  "258503": "Crackers & Crispbread",           // leaf
-  "257959": "Cereal & Breakfast Bars",         // leaf
-
-  // --- Fruits & Vegetable (257971) ---
-  "257971": "Fruits & Vegetable",           // parent - includes freeze-dried/dehydrated
-
-  // --- Food & Beverages other ---
-  "79631":  "Other Food & Beverages",       // leaf - confirmed ✓
-
-  // --- Non-food (Food Storage, Equipment) ---
-  "20626":  "Food Storage",
-  "184638": "Grain Mills & Food Mills",
-  "133696": "Food Dehydrators",
+  // All listings use eBay's Food & Beverages parent category (14308)
+  // Store categories are manually maintained in eBay Seller Hub
+  // Map: eBay marketplace category ID → Store category name
+  // The Store category name must exactly match what you created in eBay Store
+  "14308": "Food & Beverages",  // default — updated after Store category fetch
 };
 
 // In-memory cache: Store category name -> Store category ID
@@ -249,7 +184,7 @@ async function loadStoreCategoryCache() {
 
 async function getOrCreateStoreCategory(ebayCategoryId) {
   const categoryName = EBAY_TO_STORE_CATEGORY[String(ebayCategoryId)];
-  if (!categoryName) return null; // unmapped category — skip Store assignment
+  if (!categoryName) return null;
 
   // Load cache on first use
   if (storeCategoryCache === null) {
@@ -259,62 +194,12 @@ async function getOrCreateStoreCategory(ebayCategoryId) {
     }
   }
 
-  // Already exists — return its ID
-  if (storeCategoryCache[categoryName]) {
-    return storeCategoryCache[categoryName];
+  // Look up by name — categories are manually created in eBay Store
+  const storeId = storeCategoryCache[categoryName];
+  if (!storeId) {
+    console.warn(`Store category not found: "${categoryName}" (eBay cat ${ebayCategoryId}) — create it in eBay Seller Hub → Store → Manage Store`);
   }
-
-  // Doesn't exist — create it via SetStoreCategories
-  console.log(`Creating new Store category: "${categoryName}"`);
-  try {
-    const xml = create({ version: "1.0", encoding: "utf-8" })
-      .ele("SetStoreCategoriesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
-        .ele("RequesterCredentials")
-          .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
-        .up()
-        .ele("Action").txt("Add").up()
-        .ele("StoreCategories")
-          .ele("CustomCategory")
-            .ele("CategoryID").txt("-1").up()  // -1 = new category
-            .ele("Name").txt(categoryName).up()
-            .ele("Order").txt("999").up()
-          .up()
-        .up()
-      .up()
-      .end({ prettyPrint: false });
-
-    const res = await fetch(EBAY_API_URL, {
-      method: "POST",
-      headers: ebayHeaders("SetStoreCategories"),
-      body: xml,
-    });
-    const parsed = await parseXml(await res.text());
-    const resp = parsed?.SetStoreCategoriesResponse;
-
-    if (resp?.Ack === "Failure") {
-      const errors = [].concat(resp?.Errors || []);
-      console.error(`SetStoreCategories failed for "${categoryName}":`, errors.map(e => e.ShortMessage).join("; "));
-      return null;
-    }
-
-    // eBay returns the new category ID in the response
-    const newCats = [].concat(resp?.CategoryMapping || []);
-    const newId = newCats[0]?.NewCategoryID || null;
-
-    if (newId) {
-      storeCategoryCache[categoryName] = String(newId);
-      console.log(`✓ Created Store category "${categoryName}" with ID ${newId}`);
-      return String(newId);
-    }
-
-    // Fallback: reload cache to pick up the new ID
-    await loadStoreCategoryCache();
-    return storeCategoryCache[categoryName] || null;
-
-  } catch(e) {
-    console.error(`getOrCreateStoreCategory error for "${categoryName}":`, e.message);
-    return null;
-  }
+  return storeId || null;
 }
 
 
@@ -568,7 +453,7 @@ app.post("/api/ebay/list", auth, async (req, res) => {
         .ele("Title").txt(name.substring(0, 80)).up()
         .ele("Description").txt(description || name).up()
         .ele("PrimaryCategory")
-          .ele("CategoryID").txt(String(categoryId || "177762")).up()
+          .ele("CategoryID").txt(String(categoryId || "14308")).up()
         .up()
         .ele("StartPrice").txt(String(finalPrice)).up();
 
@@ -662,7 +547,17 @@ app.post("/api/ebay/list", auth, async (req, res) => {
 });
 
 // ── eBay: get categories (for dropdown) ─────────────────────────────────────
-// ── GET verify a single category ID — returns its actual name from eBay ───────
+// ── GET fetch actual Store categories from eBay for mapping ──────────────────
+app.get("/api/ebay/store-categories", auth, async (req, res) => {
+  try {
+    await loadStoreCategoryCache();
+    res.json(storeCategoryCache);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 app.get("/api/ebay/category-name", auth, async (req, res) => {
   const { id } = req.query;
   if (!id) return res.status(400).json({ error: "id required" });
@@ -1157,7 +1052,7 @@ async function relistOnEbay(entry) {
         .ele("Title").txt(String(title).substring(0, 80)).up()
         .ele("Description").txt(description || title).up()
         .ele("PrimaryCategory")
-          .ele("CategoryID").txt(String(categoryId || "177762")).up()
+          .ele("CategoryID").txt(String(categoryId || "14308")).up()
         .up()
         .ele("StartPrice").txt(String(ebayPrice)).up();
 
@@ -1606,7 +1501,7 @@ app.post("/webhook/ebay-account-deletion", (req, res) => {
 app.post("/api/claude/autofill", auth, async (req, res) => {
   const { name, description, weight } = req.body;
 
-  const prompt = "You are an eBay listing expert for a grain mill and whole foods store. Given a product name and description, return ONLY a JSON object with these fields:\n- categoryId: the best eBay US category ID (number as string)\n- brand: brand name from the product (or Unbranded)\n- type: short product type for eBay item specifics\n- weight: weight in lbs as a number (use provided weight, or extract from name, or null)\n- categoryName: human readable category name\n- categoryRationale: one short sentence explaining why this category was chosen (e.g. \"Matches Grains & Rice — whole unground wheat kernel product\")\n\nProduct name: " + name + "\nDescription: " + (description || "None") + "\nKnown weight (lbs): " + (weight || "unknown") + "\n\nCategory IDs to use:\n257993: Grains & Cereals - whole unground grain kernels ONLY (wheat berries, corn, barley, millet, quinoa, rye, buckwheat, spelt berries, groats) - USE THIS for whole grains\n257949: Baking Mixes - bread mixes, cake mixes, cookie mixes, pancake mixes\n257952: Yeast & Leavening Agents - yeast, baking powder, baking soda, cream of tartar, xanthan gum\n257951: Sugar & Sweeteners - sugar, honey powder, maple syrup, molasses, stevia\n257958: Breakfast Cereals Muesli & Oats - oats, oatmeal, granola, grits, farina, hot cereals\n257989: Cooking Oils & Serving Oils - olive oil, coconut oil, vegetable oil\n257988: Longlife Cooking & Baking Fats - butter powder, shortening, ghee, lard\n257977: Single Spices - individual spices, salt, pepper, paprika, cinnamon, turmeric\n257979: Spice Mixes - seasoning blends, mixed spices\n257978: Salt - sea salt, kosher salt, himalayan, canning salt\n257975: Herbs Spices & Seasonings - dried herbs, general seasonings\n257983: Honey - pure honey, raw honey\n257984: Jam & Marmalade - jam, jelly, preserves\n257985: Nut Butters - peanut butter, almond butter, tahini, seed butters\n257982: Jam Honey & Spreads - general spreads parent\n257990: Pasta Grains & Cereals - parent category for grains and pasta\n258012: Dried Fruit & Nuts - raisins, dried fruit, nuts, seeds, trail mix\n258013: Popcorn - popcorn kernels\n257995: Prepared Food & Ready Meals - mixes, soup mixes, ready meals\n257971: Fruits & Vegetable - freeze-dried or dehydrated fruits and vegetables\n20626: Food Storage - mylar bags, vacuum seal bags, oxygen absorbers, mason jars, buckets, canning supplies\n184638: Grain Mills & Food Mills - manual or electric grain mills, wheat grinders\n133696: Food Dehydrators - food dehydrators\n79631: Other Food & Beverages - anything food that does not fit above\nIMPORTANT: Do NOT use 257947 (Extracts & Flavoring) or 257954 (Extracts & Flavoring) for flour or grains. Flour goes in 257949 (Baking Mixes) or 257993 (Grains & Cereals) depending on whether it is already ground.\n\nReturn ONLY valid JSON, no markdown, no explanation.";
+  const prompt = "You are an eBay listing expert for a grain mill and whole foods store. Given a product name and description, return ONLY a JSON object with these fields:\n- categoryId: the best eBay US category ID (number as string)\n- brand: brand name from the product (or Unbranded)\n- type: short product type for eBay item specifics\n- weight: weight in lbs as a number (use provided weight, or extract from name, or null)\n- categoryName: human readable category name\n- categoryRationale: one short sentence explaining why this category was chosen (e.g. \"Matches Grains & Rice — whole unground wheat kernel product\")\n\nProduct name: " + name + "\nDescription: " + (description || "None") + "\nKnown weight (lbs): " + (weight || "unknown") + "\n\nCategory IDs to use:\nALWAYS use categoryId: \"14308\" (Food & Beverages) for ALL food, grain, flour, spice, oil, honey, baking, and beverage products. Only use 20626 for Food Storage equipment, 184638 for Grain Mills, 133696 for Food Dehydrators, 79631 for anything that truly does not fit food categories.\n\nReturn ONLY valid JSON, no markdown, no explanation.";
 
   try {
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1823,14 +1718,91 @@ Return ONLY valid JSON, no markdown, no explanation.`;
   return { html: noJsHtml, about, ingredients };
 }
 
-// ── Category corrections: known wrong IDs → correct IDs ──────────────────────
+// ── Pre-create all Store categories in one batch ─────────────────────────────
+// SetStoreCategories has a daily limit — call it once with all needed names
+// rather than once per listing. Called at start of bulk revise.
+async function ensureAllStoreCategories() {
+  // Load existing categories first
+  if (storeCategoryCache === null) {
+    try { await loadStoreCategoryCache(); } catch(e) {
+      console.error("Failed to load Store category cache:", e.message);
+      storeCategoryCache = {};
+    }
+  }
+
+  // Find which Store category names we need that don't exist yet
+  const allNames = [...new Set(Object.values(EBAY_TO_STORE_CATEGORY))];
+  const missing = allNames.filter(name => !storeCategoryCache[name]);
+
+  if (!missing.length) {
+    console.log(`All ${allNames.length} Store categories already exist`);
+    return;
+  }
+
+  console.log(`Creating ${missing.length} missing Store categories: ${missing.join(", ")}`);
+
+  // eBay allows up to 10 categories per SetStoreCategories call — batch them
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < missing.length; i += BATCH_SIZE) {
+    const batch = missing.slice(i, i + BATCH_SIZE);
+    try {
+      let reqNode = create({ version: "1.0", encoding: "utf-8" })
+        .ele("SetStoreCategoriesRequest", { xmlns: "urn:ebay:apis:eBLBaseComponents" })
+          .ele("RequesterCredentials")
+            .ele("eBayAuthToken").txt(EBAY_USER_TOKEN).up()
+          .up()
+          .ele("Action").txt("Add").up()
+          .ele("StoreCategories");
+
+      batch.forEach((name, idx) => {
+        reqNode = reqNode
+          .ele("CustomCategory")
+            .ele("CategoryID").txt("-1").up()
+            .ele("Name").txt(name).up()
+            .ele("Order").txt(String(900 + i + idx)).up()
+          .up();
+      });
+
+      const xml = reqNode.up().up().end({ prettyPrint: false });
+      const res = await fetch(EBAY_API_URL, {
+        method: "POST",
+        headers: ebayHeaders("SetStoreCategories"),
+        body: xml,
+      });
+      const parsed = await parseXml(await res.text());
+      const resp = parsed?.SetStoreCategoriesResponse;
+
+      if (resp?.Ack === "Failure") {
+        const errors = [].concat(resp?.Errors || []).map(e => e.ShortMessage).join("; ");
+        console.error(`SetStoreCategories batch failed: ${errors}`);
+      } else {
+        console.log(`✓ Batch created Store categories: ${batch.join(", ")}`);
+      }
+
+      // Small delay between batches
+      if (i + BATCH_SIZE < missing.length) await new Promise(r => setTimeout(r, 1000));
+    } catch(e) {
+      console.error(`ensureAllStoreCategories batch error: ${e.message}`);
+    }
+  }
+
+  // Reload cache to pick up all new IDs
+  await loadStoreCategoryCache().catch(() => {});
+}
+
+
 // Applied during bulk revise to fix miscategorized listings automatically.
 const CATEGORY_CORRECTIONS = {
-  "257947": "257949",  // Baking Chocolate / was misused for flour → Baking Mixes
-  "257954": "257949",  // Extracts & Flavoring → Baking Mixes
-  "14923":  "257949",  // Old flour category ID → Baking Mixes
-  "177762": "257993",  // Old default listing category → Grains & Cereals
-  "257991": "257993",  // Dried Beans & Pulses (wrong for grains) → Grains & Cereals
+  // Redirect all old/wrong subcategory IDs to Food & Beverages (14308)
+  "257947": "14308", "257954": "14308", "14923": "14308",
+  "14308": "14308", "257993": "14308", "257990": "14308",
+  "257949": "14308", "257952": "14308", "257951": "14308",
+  "257958": "14308", "257989": "14308", "257988": "14308",
+  "257977": "14308", "257979": "14308", "257978": "14308",
+  "257975": "14308", "257983": "14308", "257984": "14308",
+  "257985": "14308", "257982": "14308", "257991": "14308",
+  "258012": "14308", "258013": "14308", "257995": "14308",
+  "257971": "14308", "257943": "14308", "257942": "14308",
 };
 
 // For each active listing: regenerates branded description via Claude,
@@ -2025,7 +1997,7 @@ app.post("/api/ebay/preview-xml", auth, async (req, res) => {
   const totalOz = Math.round(parseFloat(weightLbs) * 16);
   const weightPounds = Math.floor(totalOz / 16);
   const weightOunces = totalOz % 16;
-  const noConditionCategories = ["177762", "14308", "181000", "3025"];
+  const noConditionCategories = ["14308", "14308", "181000", "3025"];
   const skipCondition = noConditionCategories.includes(String(categoryId));
   res.json({ debug: { weightLbs, totalOz, weightPounds, weightOunces, skipCondition, categoryId, finalPrice, brand, itemType, hasImage: !!imageUrl } });
 });
@@ -2282,7 +2254,7 @@ async function processQueueItem(id) {
             "- weight: weight in lbs as number or null\n- categoryName: human readable name\n" +
             "- categoryRationale: one short sentence explaining category choice\n\n" +
             "Product: " + name + "\nDescription: " + (description||"None") + "\nWeight: " + (weight||"unknown") + "\n\n" +
-            "Categories:\n257993: Grains & Cereals (whole unground grains)\n257949: Baking Mixes (flour, bread mix, cake mix)\n257952: Yeast & Leavening Agents\n257951: Sugar & Sweeteners\n257958: Breakfast Cereals Muesli & Oats\n257977: Single Spices\n257979: Spice Mixes\n257983: Honey\n257985: Nut Butters\n257988: Longlife Cooking & Baking Fats\n257989: Cooking Oils\n258012: Dried Fruit & Nuts\n257990: Pasta Grains & Cereals\n257995: Prepared Food\n257971: Fruits & Vegetable\n20626: Food Storage\n184638: Grain Mills\n79631: Other Food\n" +
+            "Category: ALWAYS use 14308 (Food & Beverages) for all food products. Only exceptions: 20626 for Food Storage equipment, 184638 for Grain Mills, 133696 for Food Dehydrators.\n" +
             "257952: Yeast, Leavening & Binders\n257951: Sugar & Sweeteners\n257944: Bread & Pastry Mixes\n" +
             "257945: Cake & Cupcake Mixes\n257946: Cookie & Brownie Mixes\n257989: Cooking Oils\n" +
             "257978: Salt\n257977: Pepper & Chili\n257980: Spices\n257979: Seasoning Mixes & Blends\n" +
