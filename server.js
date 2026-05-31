@@ -693,10 +693,16 @@ app.get("/api/debug/categories", auth, async (req, res) => {
 
     // Show only unique resolved names with match status
     const seen = new Set();
+    const resolveMatch = (name) => {
+      if (STORE_CATEGORY_IDS[name]) return true;
+      const fb = SQUARE_TO_STORE_FALLBACK[name];
+      if (fb === null) return "ignored";
+      return !!(fb && STORE_CATEGORY_IDS[fb]);
+    };
     const result = cats
       .map(c => {
         const r = resolve(c.id);
-        return { ...r, squareName: c.name, ebayStoreMatch: !!STORE_CATEGORY_IDS[r.resolved] };
+        return { ...r, squareName: c.name, ebayStoreMatch: resolveMatch(r.resolved) };
       })
       .filter(c => { if (seen.has(c.resolved)) return false; seen.add(c.resolved); return true; })
       .sort((a, b) => a.resolved.localeCompare(b.resolved));
