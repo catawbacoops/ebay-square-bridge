@@ -1074,7 +1074,7 @@
           : `<div class="queue-card-photo-empty">📦</div>`}
         <div class="queue-card-meta">
           <div class="queue-card-name">${esc(item.product.name)}</div>
-          <div class="queue-card-sku">SKU: ${esc(item.product.sku || '—')} · Square: $${(item.product.squarePrice||0).toFixed(2)}</div>
+          <div class="queue-card-sku">SKU: ${esc(item.product.sku || '—')} · Square: $${(item.product.squarePrice||0).toFixed(2)} · <span style="color:#1D9E75;">${esc(item.product.category || '⚠ no category')}</span></div>
           <span class="queue-card-badge badge-ready">✓ Ready to approve</span>
         </div>
       </div>
@@ -1322,9 +1322,14 @@
         ? `<td><span class="price-mismatch" title="eBay: $${info.ebayPrice.toFixed(2)} → $${p.ebayPrice.toFixed(2)}">⚠ $${info.ebayPrice.toFixed(2)}</span></td>`
         : `<td style="color:#3ecf8e;font-weight:600;">${p.ebayPrice > 0 ? '$'+p.ebayPrice.toFixed(2) : '—'}</td>`;
 
+      const catDisplay = p.category
+        ? `<span style="font-size:11px;background:#1e2a1e;color:#1D9E75;padding:2px 7px;border-radius:8px;border:1px solid #1D9E7533;">${esc(p.category)}</span>`
+        : `<span style="font-size:11px;color:#c42b30;" title="No Square category — Store category will be blank on eBay">⚠ none</span>`;
+
       rows += `<tr${hasMismatch ? ' class="row-mismatch"' : ''}>
         <td><div class="prod-name">${esc(p.name)}</div></td>
         <td><div class="prod-sku">${esc(p.sku||'—')}</div></td>
+        <td>${catDisplay}</td>
         <td style="color:#6e6e82;">${p.squarePrice > 0 ? '$'+p.squarePrice.toFixed(2) : '—'}</td>
         ${priceCell}
         <td class="action-cell">${queueBtn}${listBtn}${syncBtn}</td>
@@ -1334,6 +1339,7 @@
       `<table class="prod-table"><thead><tr>
         <th class="sortable${currentSort==='name'?' sort-active':''}" onclick="setSort('name')">Product ${currentSort==='name'?(sortAsc?'↑':'↓'):''}</th>
         <th class="sortable${currentSort==='sku'?' sort-active':''}" onclick="setSort('sku')">SKU ${currentSort==='sku'?(sortAsc?'↑':'↓'):''}</th>
+        <th>Category</th>
         <th>Sq Price</th><th>eBay Price</th><th></th>
       </tr></thead><tbody>${rows}</tbody></table>`;
   }
