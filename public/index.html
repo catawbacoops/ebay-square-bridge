@@ -1056,6 +1056,13 @@
         </div>
       </div>
 
+      <!-- Product description from Square -->
+      ${item.product.description ? `
+      <div style="background:#1e1e28;border-radius:8px;padding:12px 14px;margin-bottom:16px;border:1px solid #2e2e38;">
+        <div style="font-size:11px;font-weight:600;color:#6e6e82;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Square Description</div>
+        <div style="font-size:13px;color:#a0a0b0;line-height:1.6;">${esc(item.product.description)}</div>
+      </div>` : ''}
+
       <!-- Fields grid -->
       <div class="field-grid">
         <div class="field-item">
