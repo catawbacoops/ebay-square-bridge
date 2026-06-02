@@ -2628,7 +2628,7 @@ async function processQueueItem(id) {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514", max_tokens: 400,
+        model: "claude-sonnet-4-20250514", max_tokens: 1024,
         messages: [{ role: "user", content:
           "You are an eBay SEO expert for bulk food and grains. Write 2 eBay titles maximizing search visibility.\n" +
           "Rules: lead with most-searched keyword, include weight when relevant, include attributes (Non-GMO, Organic, Bulk, Whole), avoid filler words, 70-80 chars each.\n" +
@@ -2637,9 +2637,17 @@ async function processQueueItem(id) {
         }]
       })
     });
+    if (!titleRes.ok) {
+      const errText = await titleRes.text();
+      throw new Error("Claude API error " + titleRes.status + ": " + errText.substring(0, 200));
+    }
     const titleJson = await titleRes.json();
-    const parsed = JSON.parse((titleJson.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim());
-    const titles = (parsed.titles||[]).map(t => ({ ...t, chars: t.title.length }));
+    const rawText = titleJson.content?.[0]?.text || "";
+    if (!rawText) throw new Error("Claude returned empty content for titles");
+    const cleanText = rawText.replace(/```json|```/g, "").trim();
+    let parsed;
+    try { parsed = JSON.parse(cleanText); }
+    catch(pe) { throw new Error("Title JSON parse failed. Raw: " + cleanText.substring(0, 200)); }
 
     queueUpdate(id, {
       status: "ready",
