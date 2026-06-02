@@ -2648,6 +2648,7 @@ async function processQueueItem(id) {
     let parsed;
     try { parsed = JSON.parse(cleanText); }
     catch(pe) { throw new Error("Title JSON parse failed. Raw: " + cleanText.substring(0, 200)); }
+    const titles = (parsed.titles||[]).map(t => ({ ...t, chars: t.title.length }));
 
     queueUpdate(id, {
       status: "ready",
