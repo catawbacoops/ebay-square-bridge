@@ -1774,17 +1774,35 @@ app.post("/api/claude/autofill", auth, async (req, res) => {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 300,
+        max_tokens: 512,
         messages: [{ role: "user", content: prompt }],
       }),
     });
 
     const claudeData = await claudeRes.json();
-    const text = claudeData.content?.[0]?.text || "{}";
+
+    if (!claudeRes.ok) {
+      console.error("Claude API error (autofill):", JSON.stringify(claudeData));
+      return res.status(502).json({ error: "Claude API error: " + (claudeData?.error?.message || claudeRes.status) });
+    }
+
+    const text = claudeData.content?.[0]?.text || "";
+    if (!text) {
+      console.error("Claude autofill empty response:", JSON.stringify(claudeData));
+      return res.status(502).json({ error: "Claude returned empty response" });
+    }
+
     const clean = text.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(clean);
+    let parsed;
+    try {
+      parsed = JSON.parse(clean);
+    } catch (parseErr) {
+      console.error("autofill JSON parse failed. Raw:", text);
+      return res.status(502).json({ error: "Failed to parse Claude response as JSON" });
+    }
     res.json(parsed);
   } catch (e) {
+    console.error("autofill exception:", e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -1828,15 +1846,34 @@ Each title must be 70-80 characters. Count carefully. The "chars" field must be 
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 400,
+        max_tokens: 1024,
         messages: [{ role: "user", content: prompt }],
       }),
     });
 
     const claudeData = await claudeRes.json();
-    const text = claudeData.content?.[0]?.text || "{}";
+
+    if (!claudeRes.ok) {
+      console.error("Claude API error (optimize-title):", JSON.stringify(claudeData));
+      return res.status(502).json({ error: "Claude API error: " + (claudeData?.error?.message || claudeRes.status) });
+    }
+
+    const text = claudeData.content?.[0]?.text || "";
+    if (!text) {
+      console.error("Claude returned empty content:", JSON.stringify(claudeData));
+      return res.status(502).json({ error: "Claude returned empty response" });
+    }
+
     const clean = text.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(clean);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(clean);
+    } catch (parseErr) {
+      console.error("JSON parse failed. Raw text:", text);
+      return res.status(502).json({ error: "Failed to parse Claude response as JSON" });
+    }
+
     // Recount chars server-side to catch model miscounts
     parsed.titles = (parsed.titles || []).map(t => ({
       ...t,
@@ -1844,6 +1881,7 @@ Each title must be 70-80 characters. Count carefully. The "chars" field must be 
     }));
     res.json(parsed);
   } catch (e) {
+    console.error("optimize-title exception:", e.message);
     res.status(500).json({ error: e.message });
   }
 });
