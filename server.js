@@ -1293,7 +1293,8 @@ async function relistOnEbay(entry) {
   const { sku, title, ebayPrice, quantity, categoryId, conditionId,
           brand, itemType, weightLbs, imageUrl, description } = entry;
 
-  if (!title || !ebayPrice) throw new Error("Missing title or price in saved listing data");
+  if (!title) throw new Error("Missing title in saved listing data");
+  if (!ebayPrice || ebayPrice <= 0) throw new Error("Missing price in saved listing data — check Square catalog for SKU: " + sku);
 
   const totalOz = Math.round(parseFloat(weightLbs || 1) * 16);
   const weightPounds = Math.floor(totalOz / 16);
@@ -1611,7 +1612,7 @@ app.post("/api/ebay/relist", auth, async (req, res) => {
           sku,
           itemId,
           title: unwrap(item.Title) || sku,
-          ebayPrice: parseFloat(unwrap(item.BuyItNowPrice) || unwrap(item.StartPrice) || "0") || 0,
+          ebayPrice: parseFloat(unwrap(item.BuyItNowPrice) || unwrap(item.StartPrice) || unwrap(item.SellingStatus?.CurrentPrice) || "0") || 0,
           quantity: parseInt(unwrap(item.Quantity) || "5") || 5,
           brand: specs.find(s => unwrap(s.Name) === "Brand") ? unwrap(specs.find(s => unwrap(s.Name) === "Brand").Value) : "Unbranded",
           itemType: specs.find(s => unwrap(s.Name) === "Type") ? unwrap(specs.find(s => unwrap(s.Name) === "Type").Value) : "",
@@ -1622,6 +1623,19 @@ app.post("/api/ebay/relist", auth, async (req, res) => {
           conditionId: unwrap(item.ConditionID) || "1000",
         };
 
+        // If eBay returned no price (common for ended fixed-price items), fetch from Square
+        if (!entry.ebayPrice) {
+          try {
+            const sqRes = await fetch(`${SQUARE_BASE}/v2/catalog/search`, {
+              method: "POST", headers: squareHeaders(),
+              body: JSON.stringify({ object_types: ["ITEM_VARIATION"], query: { exact_query: { attribute_name: "sku", attribute_value: sku } } })
+            });
+            const sqData = await sqRes.json();
+            const vd = (sqData.objects || [])[0]?.item_variation_data || {};
+            const sqPrice = (vd.price_money?.amount || 0) / 100;
+            if (sqPrice > 0) entry.ebayPrice = parseFloat((sqPrice * (1 + MARKUP)).toFixed(2));
+          } catch(e) { console.error("Square price fallback error:", e.message); }
+        }
         console.log(`Relist entry built — title:"${entry.title}" price:${entry.ebayPrice} weight:${entry.weightLbs}`);
       }
     } catch(e) {
