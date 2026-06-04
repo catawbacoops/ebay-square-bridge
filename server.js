@@ -524,6 +524,7 @@ app.get("/api/square/products", auth, async (req, res) => {
         squarePrice: priceDollars,
         ebayPrice,
         inStock: variationData.track_inventory === false || true,
+        sellable: variationData.sellable !== false,
         imageUrl: imageId ? (imageUrlMap[imageId] || "") : "",
         weightRaw: JSON.stringify(variationData.weight || null),
         weight: (function() {
@@ -1518,7 +1519,44 @@ app.get("/api/ebay/ended-listings", auth, async (req, res) => {
     const combined = [...liveList, ...localOnly]
       .sort((a, b) => new Date(b.endedAt || 0) - new Date(a.endedAt || 0));
 
-    res.json(combined);
+    // Fetch Square sellable status for all SKUs using catalog/search-catalog-items
+    const skusToCheck = [...new Set(combined.map(l => l.sku).filter(Boolean))];
+    const sellableMap = {};
+    if (skusToCheck.length) {
+      try {
+        // Search catalog items by SKU prefix in batches; Square supports SKU exact match
+        for (let i = 0; i < skusToCheck.length; i += 50) {
+          const batch = skusToCheck.slice(i, i + 50);
+          const sqRes = await fetch(`${SQUARE_BASE}/v2/catalog/search`, {
+            method: "POST",
+            headers: squareHeaders(),
+            body: JSON.stringify({
+              object_types: ["ITEM_VARIATION"],
+              query: {
+                set_query: {
+                  attribute_name: "sku",
+                  attribute_values: batch
+                }
+              }
+            })
+          });
+          const sqData = await sqRes.json();
+          (sqData.objects || []).forEach(obj => {
+            const vd = obj.item_variation_data || {};
+            if (vd.sku) sellableMap[vd.sku] = vd.sellable !== false;
+          });
+        }
+      } catch(e) {
+        console.error("sellable lookup error:", e.message);
+      }
+    }
+
+    const withSellable = combined.map(l => ({
+      ...l,
+      sellable: l.sku in sellableMap ? sellableMap[l.sku] : null
+    }));
+
+    res.json(withSellable);
   } catch(e) {
     console.error("ended-listings error:", e.message);
     // Fall back to local file if eBay query fails
