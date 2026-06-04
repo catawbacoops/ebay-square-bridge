@@ -827,7 +827,7 @@
     document.getElementById('tab-' + name).classList.add('active');
     document.getElementById('tab-btn-' + name).classList.add('active');
     if (name === 'active') loadEbayListings();
-    if (name === 'ended') loadEndedListings();
+    if (name === 'ended') { if (!listedSkus.size) loadEbayListings().then(loadEndedListings); else loadEndedListings(); }
     if (name === 'queue') renderQueueView();
     if (name === 'categories') { renderCategoryMap(); if (!squareCategories.length) loadCategories(); }
   }
@@ -837,7 +837,7 @@
     document.getElementById('tab-' + name).classList.add('active');
     document.getElementById('tab-btn-' + name).classList.add('active');
     if (name === 'active') loadEbayListings();
-    if (name === 'ended') loadEndedListings();
+    if (name === 'ended') { if (!listedSkus.size) loadEbayListings().then(loadEndedListings); else loadEndedListings(); }
     if (name === 'queue') renderQueueView();
     if (name === 'categories') { renderCategoryMap(); if (!squareCategories.length) loadCategories(); }
   }
@@ -1492,7 +1492,8 @@
     try {
       const res = await fetch('/api/ebay/ended-listings', { headers: {} });
       const data = await res.json();
-      allEndedListings = data || [];
+      // Filter out any SKUs that are currently live or were just relisted on eBay
+      allEndedListings = (data || []).filter(l => !l.sku || !listedSkus.has(l.sku));
       const tabBtn = document.getElementById('tab-btn-ended');
       tabBtn.innerHTML = 'Ended Listings' + (allEndedListings.length ? ` <span class="tab-badge">${allEndedListings.length}</span>` : '');
       renderEndedListings(allEndedListings);
