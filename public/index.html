@@ -1546,12 +1546,29 @@
   }
 
   async function relistItem(sku, itemId, btn) {
+    // Check if already live before even trying
+    if (listedSkus.has(sku)) {
+      showToast('Already live on eBay — removing from ended list', 'success');
+      allEndedListings = allEndedListings.filter(l => l.sku !== sku);
+      renderEndedListings(allEndedListings);
+      return;
+    }
     if (!confirm('Relist "' + sku + '" on eBay now?')) return;
     btn.disabled = true; btn.textContent = 'Relisting…';
     try {
       const res = await fetch('/api/ebay/relist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku, itemId }) });
       const data = await safeJson(res);
-      if (data.error) { showToast('Relist failed: ' + data.error, 'error'); btn.disabled = false; btn.textContent = '↺ Relist'; return; }
+      if (data.error) {
+        // eBay "already listed" error = item is live, remove from ended list
+        if (data.error.includes('already have on eBay') || data.error.includes('identical items')) {
+          showToast('Already live on eBay — removing from ended list', 'success');
+          allEndedListings = allEndedListings.filter(l => l.sku !== sku);
+          renderEndedListings(allEndedListings);
+          loadEbayListings();
+          return;
+        }
+        showToast('Relist failed: ' + data.error, 'error'); btn.disabled = false; btn.textContent = '↺ Relist'; return;
+      }
       showToast('✓ Relisted! Item ID: ' + data.itemId, 'success');
       loadEndedListings(); loadEbayListings();
     } catch(e) { showToast('Error: ' + e.message, 'error'); btn.disabled = false; btn.textContent = '↺ Relist'; }
