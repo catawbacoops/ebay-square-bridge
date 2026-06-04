@@ -1529,7 +1529,7 @@
       <th class="sortable${endedSort==='endedAt'?' sort-active':''}" onclick="setEndedSort('endedAt')">Ended ${endedSort==='endedAt'?(endedSortAsc?'↑':'↓'):''}</th>
       <th class="sortable${endedSort==='title'?' sort-active':''}" onclick="setEndedSort('title')">Title ${endedSort==='title'?(endedSortAsc?'↑':'↓'):''}</th>
       <th class="sortable${endedSort==='sku'?' sort-active':''}" onclick="setEndedSort('sku')">SKU</th>
-      <th>Price</th><th>Weight</th><th></th>
+      <th>Price</th><th>Weight</th><th>Square</th><th></th>
     </tr></thead><tbody>` +
     listings.map(l => {
       const d = l.endedAt ? new Date(l.endedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
@@ -1538,6 +1538,7 @@
         <td style="color:#555566;font-size:12px;">${esc(l.sku||'—')}</td>
         <td style="color:#3ecf8e;font-weight:600;">$${(l.ebayPrice||0).toFixed(2)}</td>
         <td style="color:#6e6e82;font-size:12px;">${l.weightLbs?l.weightLbs+' lb':'—'}</td>
+        <td style="text-align:center;">${l.sellable === true ? '<span style="color:#1D9E75;font-weight:600;font-size:11px;background:#1D9E7522;padding:2px 8px;border-radius:10px;">Sellable</span>' : l.sellable === false ? '<span style="color:#c42b30;font-weight:600;font-size:11px;background:#c42b3022;padding:2px 8px;border-radius:10px;">Unsellable</span>' : '<span style="color:#555566;font-size:11px;">—</span>'}</td>
         <td><button class="relist-btn" onclick="relistItem('${esc(l.sku)}','${esc(l.itemId||'')}',this)">↺ Relist</button></td>
       </tr>`;
     }).join('') + '</tbody></table>';
